@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Panel de exámenes · Colegio La Paz</title>
+  <link rel="icon" href="assets/img/favicon.png">
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="assets/css/estilos.css">
+</head>
+<body>
+  <!-- Acceso -->
+  <section id="v-login" class="portada">
+    <header class="franja"><div class="dentro">
+      <img class="logo" src="assets/img/logo.png" alt="Colegio La Paz">
+      <div class="titulo-sitio">Exámenes en línea<br>Panel de profesores</div>
+    </div></header>
+    <div class="banda"><div class="dentro">Crea tus exámenes, aplícalos y revisa los resultados.</div></div>
+    <div class="centro">
+      <form class="tarjeta" id="form-login" autocomplete="on">
+        <h1>Entrar</h1>
+        <p class="sub">Usa el usuario y la contraseña que te dio coordinación.</p>
+        <div class="campo">
+          <label for="in-usuario">Usuario</label>
+          <input id="in-usuario" class="entrada" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="ej. ana.laura">
+        </div>
+        <div class="campo">
+          <label for="in-clave">Contraseña</label>
+          <input id="in-clave" type="password" class="entrada" autocomplete="current-password">
+        </div>
+        <div id="msg-login"></div>
+        <button class="btn grande bloque" id="btn-login" type="submit">Entrar</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Panel -->
+  <section id="v-panel" class="admin" hidden>
+    <header class="franja"><div class="dentro">
+      <img class="logo" src="assets/img/logo.png" alt="Colegio La Paz">
+      <div class="titulo-sitio">Exámenes en línea<br><span id="txt-rol">Panel</span></div>
+      <div class="der">
+        <span class="pequeno" id="txt-actualizado"></span>
+        <span class="cuenta-usuario"><b id="txt-nombre"></b></span>
+        <button class="btn secundario chico" id="btn-clave">Cambiar contraseña</button>
+        <button class="btn secundario chico" id="btn-salir">Salir</button>
+      </div>
+    </div></header>
+    <nav class="pestanas" id="pestanas">
+      <button data-v="examenes" class="activa">Mis exámenes</button>
+      <button data-v="vivo">Aplicación en vivo</button>
+      <button data-v="resultados">Resultados <span class="cuenta" id="cnt-revisar" hidden></span></button>
+      <button data-v="incidencias">Incidencias <span class="cuenta" id="cnt-inc" hidden></span></button>
+      <button data-v="profesores" id="tab-profesores" hidden>Profesores</button>
+    </nav>
+
+    <div class="contenido">
+      <!-- Exámenes -->
+      <div id="v-examenes">
+        <div class="cabecera">
+          <h2 id="tit-examenes">Mis exámenes</h2>
+          <div class="herr">
+            <button class="btn secundario" id="btn-importar">✨ Importar con IA (PDF o fotos)</button>
+            <button class="btn" id="btn-nuevo-examen">+ Nuevo examen</button>
+          </div>
+        </div>
+        <div class="tarjetas-examen" id="lista-examenes"></div>
+      </div>
+
+      <!-- En vivo -->
+      <div id="v-vivo" hidden>
+        <div class="cabecera">
+          <h2>Aplicación en vivo</h2>
+          <div class="herr">
+            <select class="entrada" id="sel-examen" style="width:auto"></select>
+            <label class="pequeno" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="chk-anulados"> Ver anulados</label>
+            <button class="btn" id="btn-generar">+ Generar códigos</button>
+          </div>
+        </div>
+        <div class="kpis" id="kpis"></div>
+        <div class="panel"><div class="tabla-env"><table class="tabla" id="tabla-codigos"></table></div></div>
+        <p class="pequeno suave" style="margin-top:10px">Se actualiza solo cada 8 segundos. La página de los alumnos es: <b id="url-alumno"></b></p>
+      </div>
+
+      <!-- Resultados -->
+      <div id="v-resultados" hidden>
+        <div class="cabecera">
+          <h2>Resultados</h2>
+          <div class="herr">
+            <select class="entrada" id="sel-res-examen" style="width:auto"></select>
+            <button class="btn secundario" id="btn-analisis" disabled>📊 Análisis</button>
+            <button class="btn secundario" id="btn-pdfs" disabled>📄 PDF de todos</button>
+            <button class="btn secundario" id="btn-csv">Descargar CSV</button>
+          </div>
+        </div>
+        <div class="panel"><div class="tabla-env"><table class="tabla" id="tabla-resultados"></table></div></div>
+        <p class="pequeno suave" style="margin-top:10px">Elige un examen para ver su análisis y sacar los PDF. Con «PDF» en cada alumno guardas su reporte para enviárselo.</p>
+      </div>
+
+      <!-- Incidencias -->
+      <div id="v-incidencias" hidden>
+        <div class="cabecera">
+          <h2>Incidencias</h2>
+          <div class="herr">
+            <select class="entrada" id="sel-inc" style="width:auto"></select>
+            <label class="pequeno" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="chk-graves"> Solo advertencias</label>
+          </div>
+        </div>
+        <div class="panel"><div class="tabla-env"><table class="tabla" id="tabla-inc"></table></div></div>
+      </div>
+
+      <!-- Profesores (solo admin) -->
+      <div id="v-profesores" hidden>
+        <div class="cabecera">
+          <h2>Profesores</h2>
+          <div class="herr"><button class="btn" id="btn-nuevo-prof">+ Nuevo profesor</button></div>
+        </div>
+        <div class="panel"><div class="tabla-env"><table class="tabla" id="tabla-prof"></table></div></div>
+        <p class="pequeno suave" style="margin-top:10px">Cada profesor solo ve sus exámenes, sus códigos y sus resultados. Tú ves todo.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Editor de exámenes -->
+  <section id="v-editor" class="admin" hidden>
+    <div class="editor-barra">
+      <div class="dentro">
+        <button class="btn secundario chico" id="ed-volver">← Mis exámenes</button>
+        <div class="ed-titulo"><b id="ed-titulo">Nuevo examen</b><span id="ed-resumen" class="pequeno suave"></span></div>
+        <span class="pequeno" id="ed-estado"></span>
+        <button class="btn secundario" id="ed-prev">Vista previa</button>
+        <button class="btn" id="ed-guardar">Guardar</button>
+      </div>
+    </div>
+    <div class="editor-cuerpo" id="ed-cuerpo"></div>
+  </section>
+
+  <!-- Modal: generar códigos -->
+  <div class="modal-fondo" id="m-generar" hidden>
+    <form class="modal" id="form-generar">
+      <h2>Generar códigos de acceso</h2>
+      <p class="suave pequeno">Cada código sirve para un solo alumno y un solo examen.</p>
+      <div class="campo"><label for="gen-examen">Examen</label><select class="entrada" id="gen-examen"></select></div>
+      <div class="fila-2">
+        <div class="campo"><label for="gen-cantidad">Cantidad</label><input class="entrada" id="gen-cantidad" type="number" min="1" max="200" value="3"></div>
+        <div class="campo"><label for="gen-etiqueta">Etiqueta (opcional)</label><input class="entrada" id="gen-etiqueta" maxlength="80" placeholder="Ej. 3° B · 28 nov"></div>
+      </div>
+      <div id="msg-generar"></div>
+      <div class="acciones">
+        <button type="button" class="btn secundario" data-cerrar>Cancelar</button>
+        <button type="submit" class="btn" id="btn-gen-ok">Generar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Modal: códigos generados -->
+  <div class="modal-fondo" id="m-codigos" hidden>
+    <div class="modal">
+      <h2>Códigos listos</h2>
+      <p class="suave" id="cod-examen"></p>
+      <div class="lista-codigos" id="cod-lista"></div>
+      <div class="acciones">
+        <button class="btn secundario" id="btn-copiar">Copiar</button>
+        <button class="btn secundario" id="btn-imprimir">Imprimir fichas</button>
+        <button class="btn" data-cerrar>Listo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: importar con IA -->
+  <div class="modal-fondo" id="m-importar" hidden>
+    <div class="modal ancho">
+      <h2>Importar examen con IA</h2>
+      <p class="suave pequeno">Sube el examen en <b>PDF</b> o <b>fotos</b> de sus hojas (en orden). La IA lo convierte en preguntas que luego revisas y ajustas antes de guardar. Si tienes el examen en Word, guárdalo primero como PDF.</p>
+      <div class="drop" id="ia-drop">
+        <div><strong>Arrastra aquí tu PDF o tus fotos</strong> o haz clic para elegirlos</div>
+        <div class="pequeno suave">PDF, JPG o PNG · hasta 10 páginas</div>
+        <input type="file" id="ia-archivos" accept="application/pdf,image/jpeg,image/png,image/webp" multiple hidden>
+      </div>
+      <div class="ia-lista" id="ia-lista"></div>
+      <div class="ia-progreso" id="ia-progreso" hidden>
+        <div class="barra-prog"><i id="ia-barra"></i></div>
+        <div class="pequeno" id="ia-texto"></div>
+      </div>
+      <div id="msg-ia"></div>
+      <div class="acciones">
+        <button type="button" class="btn secundario" data-cerrar id="ia-cancelar">Cancelar</button>
+        <button type="button" class="btn" id="ia-ok" disabled>✨ Convertir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: profesor -->
+  <div class="modal-fondo" id="m-prof" hidden>
+    <form class="modal" id="form-prof" autocomplete="off">
+      <h2 id="prof-titulo">Nuevo profesor</h2>
+      <div class="fila-2">
+        <div class="campo"><label for="prof-nombre">Nombre completo <span class="req">*</span></label><input class="entrada" id="prof-nombre" maxlength="100"></div>
+        <div class="campo"><label for="prof-usuario">Usuario <span class="req">*</span></label><input class="entrada" id="prof-usuario" maxlength="30" autocapitalize="off" spellcheck="false" placeholder="ej. ana.laura"><span class="ayuda">Minúsculas, sin espacios ni acentos.</span></div>
+      </div>
+      <div class="fila-2">
+        <div class="campo"><label for="prof-materia">Materia(s)</label><input class="entrada" id="prof-materia" maxlength="80"></div>
+        <div class="campo"><label for="prof-correo">Correo</label><input class="entrada" id="prof-correo" type="email" maxlength="120"></div>
+      </div>
+      <label class="casilla" id="prof-activo-caja"><input type="checkbox" id="prof-activo" checked> <span>Cuenta activa (puede entrar)</span></label>
+      <div id="msg-prof"></div>
+      <div class="acciones">
+        <button type="button" class="btn secundario" data-cerrar>Cancelar</button>
+        <button type="submit" class="btn" id="btn-prof-ok">Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Modal: contraseña temporal -->
+  <div class="modal-fondo" id="m-temporal" hidden>
+    <div class="modal">
+      <h2>Datos de acceso</h2>
+      <p class="suave">Envíale estos datos al profesor. Al entrar, que cambie su contraseña.</p>
+      <pre class="acceso" id="tmp-texto"></pre>
+      <div class="acciones">
+        <button class="btn secundario" id="btn-tmp-copiar">Copiar</button>
+        <button class="btn" data-cerrar>Listo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: cambiar contraseña -->
+  <div class="modal-fondo" id="m-clave" hidden>
+    <form class="modal" id="form-clave">
+      <h2>Cambiar contraseña</h2>
+      <div class="campo"><label for="cl-actual">Contraseña actual</label><input class="entrada" id="cl-actual" type="password" autocomplete="current-password"></div>
+      <div class="fila-2">
+        <div class="campo"><label for="cl-nueva">Nueva contraseña</label><input class="entrada" id="cl-nueva" type="password" autocomplete="new-password"><span class="ayuda">Mínimo 8 caracteres.</span></div>
+        <div class="campo"><label for="cl-nueva2">Repite la nueva</label><input class="entrada" id="cl-nueva2" type="password" autocomplete="new-password"></div>
+      </div>
+      <div id="msg-clave"></div>
+      <div class="acciones">
+        <button type="button" class="btn secundario" data-cerrar>Cancelar</button>
+        <button type="submit" class="btn" id="btn-clave-ok">Cambiar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Modal: confirmar -->
+  <div class="modal-fondo" id="m-confirmar" hidden>
+    <div class="modal">
+      <h2 id="conf-titulo"></h2>
+      <p id="conf-texto"></p>
+      <div id="conf-extra"></div>
+      <div class="acciones">
+        <button class="btn secundario" data-cerrar>Cancelar</button>
+        <button class="btn" id="conf-ok">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cajón lateral: detalle / vista previa / análisis -->
+  <div class="cajon-fondo" id="cajon-fondo" hidden></div>
+  <aside class="cajon" id="cajon" hidden>
+    <div class="cab">
+      <div><h2 id="caj-titulo"></h2><div class="suave pequeno" id="caj-sub"></div></div>
+      <button class="btn secundario chico" id="caj-cerrar">Cerrar ✕</button>
+    </div>
+    <div class="cuerpo" id="caj-cuerpo"></div>
+    <div class="pie" id="caj-pie"></div>
+  </aside>
+
+  <div id="zona-impresion"></div>
+
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="vendor/katex/contrib/auto-render.min.js"></script>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/comun.js"></script>
+  <script src="assets/js/admin.js"></script>
+  <script src="assets/js/editor.js"></script>
+  <script src="assets/js/analisis.js"></script>
+</body>
+</html>

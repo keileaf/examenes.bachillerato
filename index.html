@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Examen de admisión · Colegio La Paz</title>
+  <link rel="icon" href="assets/img/favicon.png">
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="assets/css/estilos.css">
+</head>
+<body>
+  <noscript><div class="mensaje error" style="margin:20px">Necesitas activar JavaScript para presentar el examen.</div></noscript>
+
+  <!-- 1. Código de acceso -->
+  <section id="p-codigo" class="portada">
+    <header class="franja"><div class="dentro">
+      <img class="logo" src="assets/img/logo.png" alt="Colegio La Paz">
+      <div class="titulo-sitio">Exámenes en línea<br>Bachillerato</div>
+    </div></header>
+    <div class="banda"><div class="dentro">Examen de admisión y evaluaciones · Colegio La Paz</div></div>
+    <div class="centro">
+      <form class="tarjeta" id="form-codigo" autocomplete="off" novalidate>
+        <h1>Examen en línea</h1>
+        <p class="sub">Escribe el código de acceso que te dio el aplicador.</p>
+        <div class="campo">
+          <label for="in-codigo">Código de acceso</label>
+          <input id="in-codigo" class="entrada entrada-codigo" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" placeholder="······">
+        </div>
+        <div id="msg-codigo"></div>
+        <button class="btn grande bloque" id="btn-codigo" type="submit">Entrar</button>
+      </form>
+    </div>
+    <div class="pie-portada">© Colegio La Paz · Calle La Paz 4551, Col. Hipódromo, Tijuana B.C.</div>
+  </section>
+
+  <!-- 2. Datos del alumno -->
+  <section id="p-datos" class="portada" hidden>
+    <header class="franja"><div class="dentro">
+      <img class="logo" src="assets/img/logo.png" alt="Colegio La Paz">
+      <div class="titulo-sitio">Exámenes en línea<br>Bachillerato</div>
+    </div></header>
+    <div class="banda"><div class="dentro">Examen de admisión y evaluaciones · Colegio La Paz</div></div>
+    <div class="centro">
+      <form class="tarjeta ancha" id="form-datos" autocomplete="off" novalidate>
+        <h1>Tus datos</h1>
+        <p class="sub" id="datos-examen-titulo"></p>
+        <div class="fila-2">
+          <div class="campo">
+            <label for="in-nombre">Nombre(s) <span class="req">*</span></label>
+            <input id="in-nombre" class="entrada" maxlength="80" autocomplete="off">
+          </div>
+          <div class="campo">
+            <label for="in-apellidos">Apellidos <span class="req">*</span></label>
+            <input id="in-apellidos" class="entrada" maxlength="80" autocomplete="off">
+          </div>
+        </div>
+        <div class="campo">
+          <label for="in-escuela">Escuela de procedencia <span class="req">*</span></label>
+          <input id="in-escuela" class="entrada" maxlength="120" autocomplete="off" placeholder="Ej. Secundaria Técnica No. 5">
+        </div>
+        <div class="campo" style="max-width:260px">
+          <label for="in-promedio">Promedio aproximado <span class="req">*</span></label>
+          <input id="in-promedio" class="entrada" maxlength="4" inputmode="decimal" autocomplete="off" placeholder="Ej. 8.7">
+          <span class="ayuda">Entre 5.0 y 10.0</span>
+        </div>
+        <div id="msg-datos"></div>
+        <div style="display:flex; gap:10px; justify-content:space-between">
+          <button class="btn secundario" type="button" id="btn-datos-atras">← Cambiar código</button>
+          <button class="btn grande" type="submit">Continuar →</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- 3. Reglas -->
+  <section id="p-reglas" class="portada" hidden>
+    <header class="franja"><div class="dentro">
+      <img class="logo" src="assets/img/logo.png" alt="Colegio La Paz">
+      <div class="titulo-sitio">Exámenes en línea<br>Bachillerato</div>
+    </div></header>
+    <div class="banda"><div class="dentro">Examen de admisión y evaluaciones · Colegio La Paz</div></div>
+    <div class="centro">
+      <div class="tarjeta ancha">
+        <h1 id="reglas-titulo">Antes de empezar</h1>
+        <p class="sub" id="reglas-sub"></p>
+        <div class="datos-examen" id="reglas-pastillas"></div>
+        <ul class="reglas" id="lista-reglas"></ul>
+        <div id="reglas-instrucciones"></div>
+        <label class="casilla"><input type="checkbox" id="chk-reglas"> <span>Leí las reglas. Entiendo que si salgo del examen se registrará y el aplicador lo verá.</span></label>
+        <div id="msg-reglas"></div>
+        <button class="btn grande bloque" id="btn-comenzar" disabled>Comenzar en pantalla completa</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Examen -->
+  <section id="p-examen" hidden>
+    <div class="marca-agua" id="marca-agua"></div>
+    <header class="barra">
+      <img class="logo" src="assets/img/logo-clp.png" alt="">
+      <div class="titulo"><b id="ex-titulo"></b><span id="ex-alumno"></span></div>
+      <div class="advert" id="ex-advert" title="Advertencias"></div>
+      <div class="guardado" id="ex-guardado">—</div>
+      <div class="reloj" id="ex-reloj">--:--</div>
+    </header>
+    <div class="cuerpo-examen">
+      <nav class="navegador" id="ex-nav" aria-label="Preguntas"></nav>
+      <main>
+        <div class="hoja" id="ex-hoja"></div>
+        <div class="pasos">
+          <button class="btn secundario" id="btn-anterior">← Anterior</button>
+          <span class="donde" id="ex-donde"></span>
+          <button class="btn" id="btn-siguiente">Siguiente →</button>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- 5. Fin -->
+  <section id="p-fin" class="portada" hidden>
+    <header class="franja"><div class="dentro">
+      <img class="logo" src="assets/img/logo.png" alt="Colegio La Paz">
+      <div class="titulo-sitio">Exámenes en línea<br>Bachillerato</div>
+    </div></header>
+    <div class="banda"><div class="dentro">Examen de admisión y evaluaciones · Colegio La Paz</div></div>
+    <div class="centro">
+      <div class="tarjeta fin" style="text-align:center">
+        <div class="palomita">✓</div>
+        <h1>Examen enviado</h1>
+        <p id="fin-texto">Tu examen se guardó correctamente.</p>
+        <p class="mensaje info">Entrega tu hoja de procedimientos al aplicador y espera sus indicaciones.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bloqueo por salir del examen -->
+  <div class="capa" id="capa-bloqueo" hidden>
+    <div class="caja">
+      <div class="icono-grande">!</div>
+      <h2 id="bloq-titulo">Saliste del examen</h2>
+      <p id="bloq-texto"></p>
+      <div class="cuenta" id="bloq-cuenta"></div>
+      <div id="bloq-pin" hidden>
+        <p><b>Llama al aplicador</b> para que escriba su clave y puedas continuar.</p>
+        <div class="pin">
+          <input id="in-pin" type="password" inputmode="numeric" maxlength="12" autocomplete="off" aria-label="Clave del aplicador">
+          <button class="btn" id="btn-pin">Desbloquear</button>
+        </div>
+      </div>
+      <div id="bloq-volver">
+        <button class="btn grande" id="btn-volver">Volver al examen</button>
+      </div>
+      <div class="err" id="bloq-err"></div>
+    </div>
+  </div>
+
+  <!-- Revisar y enviar -->
+  <div class="modal-fondo" id="modal-enviar" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="env-titulo">
+      <h2 id="env-titulo">¿Enviar tu examen?</h2>
+      <p id="env-texto"></p>
+      <div class="resumen-chips" id="env-chips"></div>
+      <p class="pequeno suave">Verde = contestada · Rojo = sin contestar. Una vez enviado ya no podrás cambiar tus respuestas.</p>
+      <div class="acciones">
+        <button class="btn secundario" id="btn-env-cancelar">Seguir contestando</button>
+        <button class="btn ok" id="btn-env-ok">Sí, enviar examen</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sin-red" id="sin-red" hidden>Sin conexión. Tus respuestas se guardan en este equipo y se enviarán al volver el internet.</div>
+
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="vendor/katex/contrib/auto-render.min.js"></script>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/comun.js"></script>
+  <script src="assets/js/alumno.js"></script>
+</body>
+</html>
