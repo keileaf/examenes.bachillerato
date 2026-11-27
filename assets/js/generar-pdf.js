@@ -7,7 +7,7 @@
  */
 (function () {
   'use strict';
-  const { esc, renderMate, latex, leerNumero, leerConjunto, fechaHora } = window.Comun;
+  const { esc, formato, bloqueCodigo, renderMate, latex, leerNumero, leerConjunto, fechaHora } = window.Comun;
 
   const ANCHO = 816, ALTO = 1056, MARGEN = 44, PIE = 26, ESCALA = 2; // carta a 96 ppp
   const TIPOS_EXAMEN = { ADMISION: 'Examen de admisión', PERIODO_1: 'Primer periodo', PERIODO_2: 'Segundo periodo', PERIODO_3: 'Tercer periodo', SEMESTRAL: 'Examen semestral', OTRO: '' };
@@ -36,6 +36,19 @@
 .rp-ficha div { min-width: 0; }
 .rp-ficha dt { font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: #5d6b82; }
 .rp-ficha dd { margin: 0; font-size: 12px; font-weight: 600; color: #1f2a3c; }
+.rp-det { width: calc(100% - 34px); margin: 6px 0 0 34px; border-collapse: collapse; font-size: 12px; }
+.rp-det td { border-top: 1px solid #eef1f6; padding: 3px 6px; vertical-align: top; }
+.rp-det .rp-det-et { width: 45%; color: #5d6b82; }
+.rp-det .ok { color: #2e7d4f; font-weight: 600; } .rp-det .mal { color: #b3261e; font-weight: 600; }
+.rp-det-cor { color: #2e7d4f; font-size: 11px; }
+.rp-nota { margin: 6px 0 0 34px; background: #eef3fa; border-radius: 4px; padding: 5px 9px; font-size: 11.5px; color: #1b3260; }
+.rp-codigo { margin: 6px 0 0 34px; }
+.rp-pagina pre.codigo { background: #f6f8fb; color: #1f2937; border: 1px solid #dfe5ee; border-radius: 4px; padding: 6px 0; margin: 6px 0; font-family: Consolas, "Courier New", monospace; font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-all; counter-reset: ln; }
+.rp-pagina pre.codigo code { font: inherit; }
+.rp-pagina pre.codigo .ln { display: block; padding-right: 8px; padding-left: 3.4em; text-indent: -3.4em; }
+.rp-pagina pre.codigo .ln::before { counter-increment: ln; content: counter(ln); display: inline-block; width: 2.4em; margin-right: 1em; text-indent: 0; text-align: right; color: #9aa3b2; }
+.rp-pagina .tk-kw { color: #7c3aed; } .rp-pagina .tk-st { color: #15803d; } .rp-pagina .tk-cm { color: #6b7280; font-style: italic; } .rp-pagina .tk-nu { color: #c2410c; } .rp-pagina .tk-fn { color: #1d4ed8; } .rp-pagina .tk-tg { color: #b91c1c; } .rp-pagina .tk-at { color: #a16207; }
+.rp-pagina code.cod-in { font-family: Consolas, "Courier New", monospace; background: #eef1f6; border-radius: 3px; padding: 0 4px; font-size: .92em; }
 .rp-coment { background: #eef3fa; border-left: 4px solid #1b3260; padding: 8px 12px; margin-top: 10px; white-space: pre-wrap; }
 .rp-aviso { background: #fbf1e4; padding: 6px 10px; margin-top: 8px; font-size: 11.5px; color: #6f4310; }
 .rp-leyenda { margin-top: 10px; font-size: 10.5px; color: #7c889b; }
@@ -48,7 +61,7 @@
 .rp-enun .katex { font-size: 1.08em; }
 .rp-pts { flex: none; font-weight: 700; font-size: 12px; white-space: nowrap; }
 .rp-pts.ok { color: #2e7d4f; } .rp-pts.mal { color: #b3261e; } .rp-pts.parcial { color: #c9822b; }
-.rp-img { max-width: 320px; max-height: 170px; margin: 6px 0 0 34px; border: 1px solid #dde3ea; border-radius: 4px; }
+.rp-img { max-width: 420px; max-height: 260px; margin: 6px 0 0 34px; border: 1px solid #dde3ea; border-radius: 4px; }
 .rp-falta-img { margin: 6px 0 0 34px; font-size: 11px; color: #7c889b; font-style: italic; }
 .rp-ops { list-style: none; margin: 6px 0 0 34px; padding: 0; }
 .rp-ops li { display: flex; align-items: center; gap: 8px; padding: 3px 8px; border-radius: 4px; margin-bottom: 2px; }
@@ -175,19 +188,25 @@
       const est = { CORRECTA: 'ok', INCORRECTA: 'mal', PARCIAL: 'parcial', POR_REVISAR: 'parcial', SIN_RESPUESTA: 'mal' }[it.resultado] || '';
       const marca = { ok: '✓', mal: '✗', parcial: '½' }[est] || '';
       h += '<div class="rp-q ' + est + '"><div class="rp-q-cab"><span class="rp-n">' + n + '</span><div class="rp-enun">' +
-        (it.inciso ? '<b>' + esc(it.inciso) + '</b> ' : '') + esc(it.enunciado) + '</div><div class="rp-pts ' + est + '">' + marca + ' ' + fmt(it.puntos) + '/' + fmt(it.puntos_max) + '</div></div>';
+        (it.inciso ? '<b>' + esc(it.inciso) + '</b> ' : '') + (it.enunciado ? formato(it.enunciado) : ({ relacionar: 'Relaciona las columnas.', crucigrama: 'Resuelve el crucigrama.' }[it.tipo] || '')) + '</div><div class="rp-pts ' + est + '">' + marca + ' ' + fmt(it.puntos) + '/' + fmt(it.puntos_max) + '</div></div>';
       if (it.imagen_url) {
         const src = await imagenIncrustada(rec, it.imagen_url);
         h += src ? '<img class="rp-img" src="' + src + '" alt="">' : '<div class="rp-falta-img">(Esta pregunta tiene una figura; consúltala en el examen en línea.)</div>';
       }
-      if (it.tipo === 'opcion' && it.opciones && it.opciones.length) {
+      if (it.detalle && it.detalle.length) {
+        h += '<table class="rp-det"><tbody>' + it.detalle.map((x) => '<tr class="' + (x.ok ? 'ok' : 'mal') + '"><td class="rp-det-et">' + esc(x.etiqueta) + '</td>' +
+          '<td><span class="' + (x.ok ? 'ok' : 'mal') + '">' + (x.ok ? '✓ ' : '✗ ') + (x.dado ? esc(x.dado) : '<span class="rp-suave">sin respuesta</span>') + '</span>' +
+          (x.ok ? '' : '<div class="rp-det-cor">Correcta: <b>' + esc(x.esperado) + '</b></div>') + '</td></tr>').join('') + '</tbody></table>';
+      } else if (it.tipo === 'opcion' && it.opciones && it.opciones.length) {
         h += '<ul class="rp-ops">' + it.opciones.map((o, i) => {
           const l = String.fromCharCode(65 + i);
           const correcta = l === it.letra_correcta, elegida = l === it.letra_alumno;
           const clase = correcta ? 'correcta' : (elegida ? 'elegida-mal' : '');
           const tag = elegida ? (correcta ? '<span class="rp-tag ok">Tu respuesta ✓</span>' : '<span class="rp-tag mal">Tu respuesta ✗</span>') : (correcta ? '<span class="rp-tag ok">Correcta</span>' : '');
-          return '<li class="' + clase + '"><span class="rp-letra">' + l.toLowerCase() + '</span><span>' + esc(o) + '</span>' + tag + '</li>';
+          return '<li class="' + clase + '"><span class="rp-letra">' + l.toLowerCase() + '</span><span>' + formato(o) + '</span>' + tag + '</li>';
         }).join('') + (it.letra_alumno ? '' : '<li><span class="rp-suave">No contestó esta pregunta.</span></li>') + '</ul>';
+      } else if (it.tipo === 'codigo') {
+        h += it.respuesta_alumno ? '<div class="rp-codigo">' + bloqueCodigo(it.respuesta_alumno) + '</div>' : '<div class="rp-abierta"><span class="rp-suave">Sin respuesta</span></div>';
       } else if (it.tipo === 'abierta') {
         h += '<div class="rp-abierta">' + (it.respuesta_alumno ? esc(it.respuesta_alumno) : '<span class="rp-suave">Sin respuesta</span>') + '</div>';
       } else {
@@ -201,13 +220,15 @@
   }
 
   // ───────────── Paginación y conversión ─────────────
-  function paginar(bloques) {
+  async function paginar(bloques) {
     const medidor = document.createElement('div');
     medidor.className = 'rp-pagina';
     medidor.style.cssText = 'position:absolute;left:-20000px;top:0;height:auto;overflow:visible;';
     document.body.appendChild(medidor);
     medidor.innerHTML = bloques.map((b) => '<div class="rp-bloque">' + b + '</div>').join('');
     renderMate(medidor);
+    // Las imágenes deben estar cargadas para medir bien su alto
+    await Promise.all(Array.from(medidor.querySelectorAll('img')).map((im) => (im.complete ? Promise.resolve() : new Promise((ok) => { im.onload = im.onerror = ok; }))));
     const disponible = ALTO - MARGEN - PIE - 14;
     const paginas = [];
     let actual = [], usado = 0;
@@ -251,10 +272,25 @@
   }
 
   /** PDF del examen evaluado de un alumno. d = respuesta de examenReportes; r = un reporte. */
+  /** Las imágenes de Drive no se pueden leer desde el navegador: el servidor las manda ya incrustadas (una vez por examen). */
+  async function precargarImagenes(d, r, rec) {
+    const faltan = (r.items || []).some((it) => it.imagen_url && !(it.imagen_url in rec.imagenes));
+    const id = d.examen && d.examen.examen_id;
+    if (!faltan || !id || !window.Panel || !window.Panel.api) return;
+    rec.porExamen = rec.porExamen || {};
+    if (!rec.porExamen[id]) {
+      rec.porExamen[id] = window.Panel.api('examenImagenes', { examen_id: id }, { espera: 120000 })
+        .then((x) => { Object.keys(x.imagenes || {}).forEach((u) => { rec.imagenes[u] = x.imagenes[u]; }); })
+        .catch(() => {});
+    }
+    await rec.porExamen[id];
+  }
+
   async function examenEvaluado(d, r, etiqueta) {
     const rec = await prepararRecursos();
+    await precargarImagenes(d, r, rec);
     const PDFLib = await cargarPdfLib();
-    const paginas = paginar(await bloquesReporte(d, r, rec, etiqueta));
+    const paginas = await paginar(await bloquesReporte(d, r, rec, etiqueta));
     const doc = await PDFLib.PDFDocument.create();
     doc.setTitle('Examen evaluado · ' + r.alumno.nombre + ' ' + r.alumno.apellidos + ' · ' + d.examen.titulo);
     doc.setAuthor('Colegio La Paz');

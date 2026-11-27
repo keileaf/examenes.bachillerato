@@ -149,5 +149,194 @@
     return fechaHora(ms);
   }
 
-  window.Comun = { llamar, ErrorApi, Reloj, dormir, esc, renderMate, latex, leerNumero, leerConjunto, avisar, cargando, formatoTiempo, fechaHora, hora, haceCuanto };
+  // ── Crucigrama (misma lógica que apps-script/Tipos.gs, para la vista previa del editor) ──
+  function letrasCrucigrama(s) {
+    return String(s == null ? '' : s).toUpperCase()
+      .replace(/Ñ/g, '\u0001').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\u0001/g, 'Ñ')
+      .replace(/[^A-ZÑ]/g, '');
+  }
+
+  function generarCrucigrama(palabras) {
+    const lista = palabras.map(function (p, k) { return { k: k, p: letrasCrucigrama(p) }; }).filter(function (x) { return x.p.length; });
+    const orden = lista.slice().sort(function (a, b) { return b.p.length - a.p.length || a.k - b.k; });
+    const celdas = {};
+    const colocadas = [];
+    const get = function (f, c) { return celdas[f + ',' + c]; };
+    function cabe(p, f, c, dir) {
+      let cruces = 0;
+      const df = dir === 'V' ? 1 : 0, dc = dir === 'H' ? 1 : 0;
+      if (get(f - df, c - dc) || get(f + df * p.length, c + dc * p.length)) return -1;
+      for (let j = 0; j < p.length; j++) {
+        const ff = f + df * j, cc = c + dc * j;
+        const actual = get(ff, cc);
+        if (actual) {
+          if (actual.l !== p[j] || actual[dir]) return -1;
+          cruces++;
+        } else if (get(ff + dc, cc + df) || get(ff - dc, cc - df)) {
+          return -1; // tocaría a otra palabra de lado
+        }
+      }
+      return cruces;
+    }
+    function poner(x, f, c, dir) {
+      const df = dir === 'V' ? 1 : 0, dc = dir === 'H' ? 1 : 0;
+      for (let j = 0; j < x.p.length; j++) {
+        const key = (f + df * j) + ',' + (c + dc * j);
+        celdas[key] = celdas[key] || { l: x.p[j] };
+        celdas[key][dir] = true;
+      }
+      colocadas.push({ k: x.k, fila: f, col: c, dir: dir, largo: x.p.length });
+    }
+    function caja() {
+      let f0 = Infinity, f1 = -Infinity, c0 = Infinity, c1 = -Infinity;
+      Object.keys(celdas).forEach(function (key) {
+        const pr = key.split(',').map(Number);
+        f0 = Math.min(f0, pr[0]); f1 = Math.max(f1, pr[0]); c0 = Math.min(c0, pr[1]); c1 = Math.max(c1, pr[1]);
+      });
+      return { f0: f0, f1: f1, c0: c0, c1: c1 };
+    }
+    orden.forEach(function (x, idx) {
+      if (idx === 0) { poner(x, 0, 0, 'H'); return; }
+      let mejor = null;
+      Object.keys(celdas).forEach(function (key) {
+        const pr = key.split(',').map(Number);
+        const cel = celdas[key];
+        for (let j = 0; j < x.p.length; j++) {
+          if (x.p[j] !== cel.l) continue;
+          ['H', 'V'].forEach(function (dir) {
+            if (cel[dir]) return;
+            const f = pr[0] - (dir === 'V' ? j : 0), c = pr[1] - (dir === 'H' ? j : 0);
+            const cr = cabe(x.p, f, c, dir);
+            if (cr < 1) return;
+            const b = caja();
+            const area = (Math.max(b.f1, f + (dir === 'V' ? x.p.length - 1 : 0)) - Math.min(b.f0, f) + 1) *
+              (Math.max(b.c1, c + (dir === 'H' ? x.p.length - 1 : 0)) - Math.min(b.c0, c) + 1);
+            const puntaje = cr * 1000 - area;
+            if (!mejor || puntaje > mejor.puntaje) mejor = { f: f, c: c, dir: dir, puntaje: puntaje };
+          });
+        }
+      });
+      if (mejor) { poner(x, mejor.f, mejor.c, mejor.dir); return; }
+      // No cruza con ninguna: se pone aparte, debajo de lo que ya hay
+      const b = caja();
+      poner(x, b.f1 + 2, b.c0, 'H');
+    });
+    const b = caja();
+    colocadas.forEach(function (it) { it.fila -= b.f0; it.col -= b.c0; });
+    // Numeración: de arriba hacia abajo y de izquierda a derecha
+    const inicios = {};
+    colocadas.forEach(function (it) { inicios[it.fila + ',' + it.col] = true; });
+    const claves = Object.keys(inicios).map(function (key) { return key.split(',').map(Number); })
+      .sort(function (a, c) { return a[0] - c[0] || a[1] - c[1]; });
+    const numero = {};
+    claves.forEach(function (pr, i) { numero[pr[0] + ',' + pr[1]] = i + 1; });
+    const items = [];
+    colocadas.forEach(function (it) { items[it.k] = { fila: it.fila, col: it.col, dir: it.dir, largo: it.largo, num: numero[it.fila + ',' + it.col] }; });
+    return { ancho: b.c1 - b.c0 + 1, alto: b.f1 - b.f0 + 1, items: items };
+  }
+
+  // ───────────── Código de programación en enunciados ─────────────
+  // ```python … ``` = bloque de código (con números de línea y colores); `x` = código dentro del texto.
+  const PALABRAS_CLAVE = new Set(('if else elif for while do return def class function var let const new import from as in is not and or ' +
+    'True False None true false null undefined this self try except catch finally raise throw with lambda yield pass break continue ' +
+    'switch case default public private protected static void int float double char bool boolean string String long short byte ' +
+    'struct enum interface extends implements package namespace using include print println printf input range len ' +
+    'setup draw size background fill stroke noStroke noFill ellipse rect line point triangle width height mouseX mouseY keyPressed mousePressed frameRate random map color PImage PVector ArrayList ' +
+    'document window console addEventListener querySelector getElementById async await of typeof ' +
+    'SELECT FROM WHERE INSERT INTO VALUES UPDATE SET DELETE CREATE TABLE JOIN ON ORDER BY GROUP AND OR NOT echo foreach elseif end then begin').split(' '));
+
+  /** Si el docente no puso el lenguaje, se adivina (HTML, CSS, JavaScript/Processing o Python). */
+  function adivinarLenguaje(c) {
+    const t = String(c || '').trim();
+    if (/^<(!doctype|html|head|body|div|p|h\d|ul|ol|li|a|img|table|form|section|header|nav|main|footer|span|link|meta|script|style)\b/i.test(t)) return 'html';
+    if (/^[^{}()=;]*\{[\s\S]*?[\w-]+\s*:\s*[^;{}]+;[\s\S]*\}/.test(t) && !/\b(function|void|var|let|const|if|for)\b/.test(t)) return 'css';
+    if (/\b(def |elif |print\()/.test(t) && !/[{};]\s*$/m.test(t)) return 'python';
+    if (/\b(void|setup|draw|size)\s*\(|\b(int|float|boolean|color)\s+\w+\s*[=;]/.test(t)) return 'processing';
+    return 'javascript';
+  }
+
+  function resaltarCodigo(codigo, lenguaje) {
+    let lang = String(lenguaje || '').toLowerCase();
+    if (!lang) lang = adivinarLenguaje(codigo);
+    if (lang === 'pde' || lang === 'p5' || lang === 'p5js') lang = 'processing';
+    if (lang === 'css' || lang === 'scss') return resaltarCss(codigo);
+    const estiloHash = /^(py|python|sh|bash|r|ruby|rb|ps|powershell|yaml|yml)$/.test(lang);
+    const esHtml = /^(html|xml|svg|vue)$/.test(lang);
+    const NADA = /(?!)/y;
+    const reglas = esHtml
+      ? [['cm', /<!--[\s\S]*?-->/y], ['tg', /<\/?[A-Za-z][\w:-]*/y], ['tg', /\/?>/y], ['at', /[A-Za-z_:][\w:.-]*(?==)/y], ['st', /"[^"]*"|'[^']*'/y]]
+      : [['cm', /\/\/[^\n]*|\/\*[\s\S]*?\*\//y], ['cm', estiloHash ? /#[^\n]*/y : NADA], ['cm', lang === 'sql' ? /--[^\n]*/y : NADA],
+        ['st', /"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`/y],
+        ['nu', /\b\d+(?:\.\d+)?\b/y], ['pc', /[A-Za-z_]\w*/y]];
+    let i = 0, out = '';
+    while (i < codigo.length) {
+      let hecho = false;
+      for (const [cls, re] of reglas) {
+        re.lastIndex = i;
+        const m = re.exec(codigo);
+        if (m && m[0].length) {
+          const t = m[0];
+          if (cls === 'pc') out += PALABRAS_CLAVE.has(t) ? '<span class="tk-kw">' + esc(t) + '</span>' : (codigo[i + t.length] === '(' ? '<span class="tk-fn">' + esc(t) + '</span>' : esc(t));
+          else out += '<span class="tk-' + cls + '">' + esc(t) + '</span>';
+          i += t.length; hecho = true; break;
+        }
+      }
+      if (!hecho) { out += esc(codigo[i]); i++; }
+    }
+    return numerarLineas(out);
+  }
+
+  /** Cada línea en su propio span para numerarlas (los colores que cruzan de línea se cierran y reabren). */
+  function numerarLineas(out) {
+    const lineas = [];
+    let abiertos = [];
+    out.split('\n').forEach((l) => {
+      const pila = abiertos.slice();
+      const re = /<span class="[^"]+">|<\/span>/g; let m;
+      while ((m = re.exec(l))) { if (m[0] === '</span>') pila.pop(); else pila.push(m[0]); }
+      lineas.push('<span class="ln">' + abiertos.join('') + (l || (abiertos.length ? '' : ' ')) + '</span>'.repeat(pila.length) + '</span>');
+      abiertos = pila;
+    });
+    return lineas.join('');
+  }
+
+  /** CSS: selectores, propiedades, valores y comentarios. */
+  function resaltarCss(codigo) {
+    const re = /(\/\*[\s\S]*?\*\/)|("[^"\n]*"|'[^'\n]*')|([\w-]+)(\s*:)(?=[^{};]*[;}])|(#[0-9a-fA-F]{3,8}\b|-?\d*\.?\d+(?:px|em|rem|%|vh|vw|s|ms|deg|fr)?\b)|([^{};\n]+)(?=\{)/g;
+    let out = '', i = 0, m;
+    while ((m = re.exec(codigo))) {
+      out += esc(codigo.slice(i, m.index));
+      if (m[1]) out += '<span class="tk-cm">' + esc(m[1]) + '</span>';
+      else if (m[2]) out += '<span class="tk-st">' + esc(m[2]) + '</span>';
+      else if (m[3]) out += '<span class="tk-at">' + esc(m[3]) + '</span>' + esc(m[4]);
+      else if (m[5]) out += '<span class="tk-nu">' + esc(m[5]) + '</span>';
+      else if (m[6]) out += '<span class="tk-tg">' + esc(m[6]) + '</span>';
+      i = re.lastIndex;
+    }
+    return numerarLineas(out + esc(codigo.slice(i)));
+  }
+
+  /** Bloque de código para mostrar un fragmento o la respuesta de un alumno. */
+  function bloqueCodigo(codigo, lenguaje) {
+    const c = String(codigo || '').replace(/\r\n?/g, '\n').replace(/\t/g, '    ').replace(/\n+$/, '');
+    return '<pre class="codigo" translate="no"' + (lenguaje ? ' data-lang="' + esc(lenguaje) + '"' : '') + '><code>' + resaltarCodigo(c, lenguaje) + '</code></pre>';
+  }
+
+  /** Texto de una pregunta u opción: escapa el HTML, respeta los saltos de línea y da formato al código. */
+  function formato(texto) {
+    const s = String(texto == null ? '' : texto).replace(/\r\n?/g, '\n');
+    if (s.indexOf('`') < 0) return esc(s).replace(/\n/g, '<br>');
+    const enLinea = (t) => esc(t).replace(/`([^`\n]+)`/g, '<code class="cod-in" translate="no">$1</code>').replace(/\n/g, '<br>');
+    const re = /```[ \t]*([\w+#.-]*)[ \t]*\n?([\s\S]*?)```/g;
+    let html = '', ultimo = 0, m;
+    while ((m = re.exec(s))) {
+      html += enLinea(s.slice(ultimo, m.index).replace(/\n$/, ''));
+      html += bloqueCodigo(m[2], m[1]);
+      ultimo = re.lastIndex;
+      if (s[ultimo] === '\n') ultimo++;
+    }
+    return html + enLinea(s.slice(ultimo));
+  }
+
+  window.Comun = { formato, bloqueCodigo, resaltarCodigo, letrasCrucigrama, generarCrucigrama, llamar, ErrorApi, Reloj, dormir, esc, renderMate, latex, leerNumero, leerConjunto, avisar, cargando, formatoTiempo, fechaHora, hora, haceCuanto };
 })();

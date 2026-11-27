@@ -1,7 +1,7 @@
 /* Panel de administración: códigos, aplicación en vivo, resultados, incidencias y exámenes. */
 (function () {
   'use strict';
-  const { llamar, Reloj, esc, renderMate, latex, leerNumero, leerConjunto, avisar, cargando, formatoTiempo, fechaHora, hora, haceCuanto } = window.Comun;
+  const { llamar, Reloj, esc, formato, bloqueCodigo, renderMate, latex, leerNumero, leerConjunto, avisar, cargando, formatoTiempo, fechaHora, hora, haceCuanto } = window.Comun;
   const $ = (id) => document.getElementById(id);
   const CLAVE_TOKEN = 'examenSeguro.admin';
 
@@ -172,13 +172,15 @@
       [advHoy, 'Advertencias hoy', advHoy ? 'alerta' : ''], [k.bloqueados, 'Bloqueados', k.bloqueados ? 'alerta' : '']
     ].map((x) => '<div class="kpi ' + x[2] + '"><div class="n">' + x[0] + '</div><div class="l">' + x[1] + '</div></div>').join('');
 
+    pintarSeguridadVivo(ex, cods);
     if (!$('chk-anulados').checked) cods = cods.filter((c) => c.estado !== 'ANULADO');
     cods.sort((a, b) => (ORDEN_ESTADO[a.estado] - ORDEN_ESTADO[b.estado]) || (b.inicio - a.inicio) || (b.creado - a.creado));
     const total = ex.total_preguntas || 0;
     let html = '<thead><tr><th>Código</th><th>Estado</th><th>Alumno</th><th>Avance</th><th>Tiempo</th><th>Advertencias</th><th>Última señal</th><th></th></tr></thead><tbody>';
     if (!cods.length) html += '<tr><td colspan="8" class="vacio">No hay códigos para este examen. Usa «Generar códigos».</td></tr>';
     cods.forEach((c) => {
-      const estado = c.estado === 'EN_CURSO' && c.bloqueado ? '<span class="estado BLOQUEADO">BLOQUEADO</span>' : '<span class="estado ' + c.estado + '">' + c.estado.replace('_', ' ') + '</span>';
+      const libre = c.seguridad === 'LIBRE' || (!c.seguridad && ex.seguridad === 'LIBRE');
+      const estado = (c.estado === 'EN_CURSO' && libre ? '<span class="estado LIBRE" title="Sin candados: puede usar otros programas">🔓</span> ' : '') + (c.estado === 'EN_CURSO' && c.bloqueado ? '<span class="estado BLOQUEADO">BLOQUEADO</span>' : '<span class="estado ' + c.estado + '">' + c.estado.replace('_', ' ') + '</span>');
       const extra = [c.grupo ? 'Grupo ' + c.grupo : '', c.escuela, c.promedio ? 'Prom. ' + c.promedio : ''].filter(Boolean).join(' · ');
       const alumno = c.nombre ? '<b>' + esc(c.nombre + ' ' + c.apellidos) + '</b><div class="pequeno suave">' + esc(extra) + '</div>' : '<span class="suave">' + esc(c.grupo ? 'Grupo ' + c.grupo : (c.etiqueta || '—')) + '</span>';
       const avance = c.estado === 'EN_CURSO' || c.estado === 'ENVIADO'
@@ -200,6 +202,44 @@
     }
     pintarVivoTiempos();
   }
+
+  /** Barra para quitar o poner los candados en vivo (parte práctica). */
+  function pintarSeguridadVivo(ex, cods) {
+    const caja = $('vivo-seg');
+    if (!ex) { caja.innerHTML = ''; return; }
+    const efectiva = (c) => (c.seguridad === 'LIBRE' || c.seguridad === 'COMPLETA') ? c.seguridad : (ex.seguridad === 'LIBRE' ? 'LIBRE' : 'COMPLETA');
+    const enCurso = cods.filter((c) => c.estado === 'EN_CURSO');
+    const grupos = Array.from(new Set(cods.filter((c) => c.estado === 'EN_CURSO' || c.estado === 'DISPONIBLE').map((c) => c.grupo).filter(Boolean))).sort();
+    const selAnt = $('vivo-seg-grupo') ? $('vivo-seg-grupo').value : '';
+    const g = grupos.indexOf(selAnt) >= 0 ? selAnt : '';
+    const delGrupo = enCurso.filter((c) => !g || c.grupo === g);
+    const libres = delGrupo.filter((c) => efectiva(c) === 'LIBRE').length;
+    const conCandado = delGrupo.length - libres;
+    caja.innerHTML = '<div class="vivo-seg">' +
+      '<b>Seguridad</b>' +
+      '<span class="pequeno suave">El examen está configurado ' + (ex.seguridad === 'LIBRE' ? '🔓 sin candados' : '🔒 con candados') + '.</span>' +
+      (enCurso.length ? '<span class="pequeno">Ahora: <b>' + conCandado + '</b> con candados · <b>' + libres + '</b> sin candados</span>' : '') +
+      (grupos.length > 1 ? '<select class="entrada chica" id="vivo-seg-grupo" style="width:auto"><option value="">Todos los grupos</option>' + grupos.map((x) => '<option' + (x === g ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select>' : '') +
+      '<button class="btn secundario chico" data-seg="LIBRE"' + (delGrupo.length && !conCandado ? ' disabled' : '') + ' title="Para la parte práctica: el alumno podrá abrir Visual Studio Code u otros programas, y copiar y pegar">🔓 Quitar candados</button>' +
+      '<button class="btn secundario chico" data-seg="COMPLETA"' + (delGrupo.length && !libres ? ' disabled' : '') + '>🔒 Poner candados</button></div>';
+  }
+  $('vivo-seg').addEventListener('change', (e) => { if (e.target.id === 'vivo-seg-grupo') pintarVivo(); });
+  $('vivo-seg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-seg]');
+    if (!b) return;
+    const modo = b.dataset.seg;
+    const grupo = $('vivo-seg-grupo') ? $('vivo-seg-grupo').value : '';
+    const quien = grupo ? 'los alumnos del grupo ' + grupo : 'todos los alumnos de este examen';
+    confirmar(modo === 'LIBRE' ? 'Quitar candados' : 'Poner candados',
+      modo === 'LIBRE'
+        ? 'A ' + quien + ' (los que están contestando y los que aún no entran) se les quitarán los candados: podrán abrir otros programas, como Visual Studio Code, y copiar y pegar. Salir del examen ya no contará como advertencia. Les llega en menos de un minuto.'
+        : 'A ' + quien + ' se les volverán a poner los candados: tendrán que regresar a pantalla completa y salir contará como advertencia. Les llega en menos de un minuto.',
+      '', async () => {
+        const r = await api('adminSeguridad', { examen_id: A.examenSel, grupo, modo });
+        avisar((modo === 'LIBRE' ? 'Candados quitados' : 'Candados puestos') + ' · ' + r.alumnos + ' alumno(s) contestando ahora', 'ok', 6000);
+        await refrescar();
+      });
+  });
 
   function pintarVivoTiempos() {
     document.querySelectorAll('[data-limite]').forEach((el) => {
@@ -326,6 +366,15 @@
   $('btn-analisis').addEventListener('click', () => window.Analisis.abrir(A.resExamen, A.resGrupo));
   $('btn-pdfs').addEventListener('click', () => window.Analisis.pdf(A.resExamen, null, $('btn-pdfs'), A.resGrupo));
   $('btn-evidencias').addEventListener('click', () => window.Analisis.evidencias(A.resExamen));
+  $('btn-ia-abiertas').addEventListener('click', async () => {
+    const btn = $('btn-ia-abiertas');
+    cargando(btn, true, 'Calificando…');
+    try {
+      const r = await api('iaCalificarPendientes', { examen_id: A.resExamen }, { espera: 300000 });
+      avisar(r.calificadas ? 'La IA calificó ' + r.calificadas + ' respuesta(s) abierta(s). Revísalas en «Revisar».' : 'No hubo respuestas pendientes que calificar (o la IA no respondió; intenta en unos minutos).', r.calificadas ? 'ok' : '', 7000);
+      refrescar();
+    } catch (err) { avisar(err.message, 'peligro', 6000); } finally { cargando(btn, false); }
+  });
   function pintarResultados() {
     const porRevisar = A.datos.resultados.filter((r) => r.estado === 'POR_REVISAR').length;
     const delExamen = A.datos.resultados.filter((r) => !A.resExamen || r.examen_id === A.resExamen);
@@ -339,6 +388,8 @@
     const res = delExamen.filter((r) => !A.resGrupo || r.grupo === A.resGrupo)
       .sort((a, b) => A.resExamen ? (a.apellidos + a.nombre).localeCompare(b.apellidos + b.nombre, 'es') : b.enviado - a.enviado);
     $('btn-analisis').disabled = !A.resExamen;
+    const pendientesEx = A.resExamen && delExamen.some((r) => r.estado === 'POR_REVISAR');
+    $('btn-ia-abiertas').hidden = !(pendientesEx && A.datos.sesion && A.datos.sesion.ia);
     $('btn-pdfs').disabled = !A.resExamen;
     $('cnt-revisar').hidden = !porRevisar;
     $('cnt-revisar').textContent = porRevisar;
@@ -352,7 +403,8 @@
         '<td>' + fmt(r.puntos) + ' / ' + fmt(r.puntos_max) + '<div class="pequeno suave">' + r.porcentaje + '%</div></td>' +
         '<td>' + (r.advertencias ? '<span class="inc-grave">' + r.advertencias + '</span>' : '0') + '</td>' +
         '<td class="pequeno">' + fechaHora(r.enviado) + '<div class="suave">' + esc(MOTIVOS[r.motivo_envio] || r.motivo_envio) + ' · ' + r.minutos_usados + ' min</div></td>' +
-        '<td><span class="estado ' + r.estado + '">' + (r.estado === 'POR_REVISAR' ? 'POR REVISAR (' + r.por_revisar + ')' : 'COMPLETO') + '</span></td>' +
+        '<td><span class="estado ' + r.estado + '">' + (r.estado === 'POR_REVISAR' ? 'POR REVISAR (' + r.por_revisar + ')' : 'COMPLETO') + '</span>' +
+        (Number(r.revision_ia) ? '<div class="pequeno suave" title="Preguntas abiertas calificadas por la IA">🤖 ' + r.revision_ia + ' por IA</div>' : '') + '</td>' +
         '<td class="nowrap"><button class="btn secundario chico" data-ver="' + esc(r.codigo) + '">Revisar</button> ' +
         '<button class="btn secundario chico" data-pdf="' + esc(r.codigo) + '" data-ex="' + esc(r.examen_id) + '" title="Descargar su examen evaluado en PDF">PDF</button></td></tr>';
     });
@@ -398,7 +450,9 @@
       const simple = /^-?\d+(\.\d+)?$/.test(v.trim());
       return '<span class="mono">' + esc(v) + '</span>' + (r && !simple ? ' &nbsp;→ ' + latex(r.tex) : (r ? '' : ' <span class="suave">(no se entiende)</span>'));
     }
-    if (it.tipo === 'abierta') return '<div style="white-space:pre-wrap">' + esc(v) + '</div>';
+    if (it.tipo === 'codigo') return bloqueCodigo(v);
+    if (it.tipo === 'opcion') return formato(v);
+    if (it.tipo === 'abierta' || it.tipo === 'completar' || it.tipo === 'relacionar' || it.tipo === 'crucigrama') return '<div style="white-space:pre-wrap">' + esc(v) + '</div>';
     return esc(v);
   }
 
@@ -408,16 +462,18 @@
       const d = await api('adminDetalle', { codigo });
       const r = d.resultado;
       $('caj-titulo').textContent = d.alumno.nombre + ' ' + d.alumno.apellidos;
-      $('caj-sub').textContent = d.examen.titulo + ' · Código ' + codigo + ' · ' + d.alumno.escuela + ' · Promedio ' + d.alumno.promedio;
+      $('caj-sub').textContent = d.examen.titulo + ' · Código ' + codigo + (d.alumno.escuela ? ' · ' + d.alumno.escuela : '') + (d.alumno.promedio ? ' · Promedio ' + d.alumno.promedio : '');
       let html = '';
       let grupo = null;
       d.items.forEach((it) => {
         if (it.grupo !== grupo) { grupo = it.grupo; html += '<div class="titulo-grupo">' + esc(it.seccion) + ' — ' + esc(it.grupo) + '</div>'; }
         const editable = d.estado === 'ENVIADO';
-        html += '<div class="item-rev ' + esc(it.resultado) + '"><div class="top"><div class="enun">' + (it.inciso ? '<b>' + esc(it.inciso) + '</b> ' : '') + esc(it.enunciado) + '</div>' +
+        html += '<div class="item-rev ' + esc(it.resultado) + '"><div class="top"><div class="enun">' + (it.inciso ? '<b>' + esc(it.inciso) + '</b> ' : '') + (it.enunciado ? formato(it.enunciado) : '<span class="suave">' + ({ relacionar: 'Relacionar columnas', crucigrama: 'Crucigrama' }[it.tipo] || '') + '</span>') + '</div>' +
           '<div class="pts-in">' + (editable ? '<input type="number" min="0" max="' + it.puntos_max + '" step="0.5" value="' + it.puntos + '" data-pid="' + esc(it.pregunta_id) + '" data-orig="' + it.puntos + '">' : it.puntos) + ' / ' + it.puntos_max + '</div></div>' +
+          (it.imagen_url ? '<img class="figura-rev" src="' + esc(it.imagen_url) + '" alt="Figura de la pregunta" loading="lazy">' : '') +
           '<div class="resp"><div><b>Respuesta del alumno</b>' + textoRespuesta(it, it.respuesta_alumno) + '</div>' +
-          '<div><b>' + (it.tipo === 'abierta' ? 'Guía para calificar' : 'Respuesta correcta') + '</b>' + esc(it.respuesta_correcta) + '</div></div>' +
+          '<div><b>' + (it.tipo === 'abierta' || it.tipo === 'codigo' ? 'Guía para calificar' : 'Respuesta correcta') + '</b>' + (it.tipo === 'codigo' && it.respuesta_correcta ? bloqueCodigo(it.respuesta_correcta) : it.tipo === 'opcion' ? '<div>' + formato(it.respuesta_correcta) + '</div>' : '<div style="white-space:pre-wrap">' + esc(it.respuesta_correcta) + '</div>') + '</div></div>' +
+          (it.nota ? '<div class="nota-ia">' + (it.revisado === 'IA' ? '🤖 <b>Calificada por la IA:</b> ' : '🤖 ') + esc(it.nota) + (it.revisado === 'IA' ? ' <span class="suave">(si no estás de acuerdo, cambia los puntos y guarda)</span>' : '') + '</div>' : '') +
           (it.resultado === 'POR_REVISAR' ? '<div class="pequeno" style="color:var(--aviso);margin-top:6px">Pendiente de calificar a mano</div>' : '') + '</div>';
       });
       if (r) {
@@ -526,7 +582,7 @@
       const enCurso = n.filter((c) => c.estado === 'EN_CURSO').length;
       const id = esc(x.examen_id);
       const grupos = Array.from(new Set(n.map((c) => c.grupo).filter(Boolean)));
-      return '<div class="tarjeta-ex"><div class="tx-cab"><div><span class="tipo-ex t-' + esc(x.tipo_examen) + '">' + esc(TIPOS_EX[x.tipo_examen] || '') + '</span><h3>' + esc(x.titulo) + '</h3></div>' +
+      return '<div class="tarjeta-ex"><div class="tx-cab"><div><span class="tipo-ex t-' + esc(x.tipo_examen) + '">' + esc(TIPOS_EX[x.tipo_examen] || '') + '</span>' + (x.seguridad === 'LIBRE' ? ' <span class="tipo-ex t-LIBRE" title="Examen práctico: el alumno puede usar otros programas">🔓 Sin candados</span>' : '') + '<h3>' + esc(x.titulo) + '</h3></div>' +
         (x.activo ? '<span class="estado COMPLETO">ACTIVO</span>' : '<span class="estado ANULADO">INACTIVO</span>') + '</div>' +
         '<div class="suave pequeno">' + esc([x.materia, x.semestre ? 'Semestre ' + x.semestre : '', x.fecha_aplicacion ? 'Aplicación ' + x.fecha_aplicacion.split('-').reverse().join('/') : ''].filter(Boolean).join(' · ')) + (admin ? ' · <b>' + esc(x.propietario_nombre) + '</b>' : '') +
         (x.carpeta && nombreCarpeta(x.carpeta) && !A.carpetaSel ? ' · 📁 ' + esc(nombreCarpeta(x.carpeta)) : '') + '</div>' +
@@ -534,11 +590,12 @@
         '<span>🔑 ' + n.length + ' códigos' + (grupos.length ? ' · ' + esc(grupos.join(', ')) : '') + '</span><span>✅ ' + enviados + ' aplicados' + (enCurso ? ' · ' + enCurso + ' en curso' : '') + '</span></div>' +
         '<div class="tx-acc">' +
         '<button class="btn chico" data-acc-ex="editar" data-id="' + id + '">' + (x.usado ? 'Configurar' : 'Editar') + '</button>' +
-        '<button class="btn secundario chico" data-acc-ex="prev" data-id="' + id + '">Vista previa</button>' +
+        '<button class="btn secundario chico" data-acc-ex="probar" data-id="' + id + '" title="Contéstalo como alumno y mira cómo se califica">▶ Probar</button>' +
         (x.activo ? '<button class="btn secundario chico" data-acc-ex="codigos" data-id="' + id + '">Generar códigos</button>' : '') +
         (enviados ? '<button class="btn secundario chico" data-acc-ex="resultados" data-id="' + id + '">📊 Resultados</button>' : '') +
         '<div class="menu-acc"><button class="btn secundario chico" data-menu-ex>⋯</button><div class="lista" hidden>' +
         (enviados ? '<button data-acc-ex="analisis" data-id="' + id + '">📊 Análisis</button><button data-acc-ex="evidencias" data-id="' + id + '">📁 Evidencias</button>' : '') +
+        '<button data-acc-ex="prev" data-id="' + id + '">Vista previa con respuestas</button>' +
         '<button data-acc-ex="mover" data-id="' + id + '">Mover a carpeta…</button>' +
         '<button data-acc-ex="duplicar" data-id="' + id + '">Duplicar</button>' +
         '<button data-acc-ex="activo" data-id="' + id + '">' + (x.activo ? 'Desactivar' : 'Activar') + '</button>' +
@@ -614,6 +671,7 @@
       case 'importar': window.Editor.importar(); break;
       case 'editar': window.Editor.abrir(id); break;
       case 'prev': vistaPrevia(id); break;
+      case 'probar': window.Panel.probarComoAlumno(id); break;
       case 'analisis': window.Analisis.abrir(id); break;
       case 'evidencias': window.Analisis.evidencias(id); break;
       case 'resultados': {
@@ -765,11 +823,11 @@
           n++;
           let resp = '';
           if (it.tipo === 'opcion') {
-            resp = '<div class="opciones" style="margin-top:8px">' + it.opciones.map((o) => '<div class="opcion ' + (o.id === it.respuesta.trim().toUpperCase() ? 'correcta-prev' : '') + '"><span class="letra">' + o.id + '</span><span>' + esc(o.texto) + '</span></div>').join('') + '</div>';
+            resp = '<div class="opciones" style="margin-top:8px">' + it.opciones.map((o) => '<div class="opcion ' + (o.id === it.respuesta.trim().toUpperCase() ? 'correcta-prev' : '') + '"><span class="letra">' + o.id + '</span><span>' + formato(o.texto) + '</span></div>').join('') + '</div>';
           } else {
-            resp = '<div class="resp" style="grid-template-columns:1fr"><div><b>' + (it.tipo === 'abierta' ? 'Guía para calificar' : 'Respuesta · tipo ' + it.tipo) + '</b>' + esc(it.respuesta) + '</div></div>';
+            resp = '<div class="resp" style="grid-template-columns:1fr"><div><b>' + (it.tipo === 'abierta' || it.tipo === 'codigo' ? 'Guía para calificar' : 'Respuesta · tipo ' + it.tipo) + '</b>' + (it.tipo === 'codigo' ? bloqueCodigo(it.respuesta) : esc(it.respuesta)) + '</div></div>';
           }
-          html += '<div class="item-rev"><div class="top"><div class="enun"><b>' + n + '. ' + esc(it.inciso) + '</b> ' + esc(it.enunciado) + '</div><div class="pequeno suave">' + it.puntos + (it.puntos === 1 ? ' pt' : ' pts') + '</div></div>' +
+          html += '<div class="item-rev"><div class="top"><div class="enun"><b>' + n + '. ' + esc(it.inciso) + '</b> ' + formato(it.enunciado) + '</div><div class="pequeno suave">' + it.puntos + (it.puntos === 1 ? ' pt' : ' pts') + '</div></div>' +
             (it.imagen ? '<img src="' + esc(it.imagen) + '" style="max-width:100%;margin-top:8px">' : '') + resp + '</div>';
         });
       });
@@ -784,6 +842,11 @@
   // ───────────── Para editor.js y analisis.js ─────────────
   window.Panel = {
     A, api, refrescar, abrirCajon, cerrarCajon, confirmar, cerrarModal, vistaPrevia, textoRespuesta, fmt,
+    probarComoAlumno(id) {
+      try { localStorage.setItem('examenSeguro.admin.prueba', A.token); } catch (e) { /* */ }
+      window.open('index.html?prueba=' + encodeURIComponent(id), '_blank');
+    },
+    abrirDetalle,
     mostrarPanel() { $('v-editor').hidden = true; $('v-panel').hidden = false; window.scrollTo(0, 0); },
     mostrarEditor() { $('v-panel').hidden = true; $('v-editor').hidden = false; window.scrollTo(0, 0); }
   };

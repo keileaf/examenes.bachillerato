@@ -1,7 +1,7 @@
 /* Análisis de resultados por pregunta y por alumno + reportes PDF para enviar a cada alumno. */
 (function () {
   'use strict';
-  const { esc, renderMate, latex, leerNumero, leerConjunto, avisar, cargando, fechaHora } = window.Comun;
+  const { esc, formato, bloqueCodigo, renderMate, latex, leerNumero, leerConjunto, avisar, cargando, fechaHora } = window.Comun;
   const P = () => window.Panel;
   const $ = (id) => document.getElementById(id);
   const sinLetra = (t) => String(t || '').replace(/^[A-H]\)\s*/, '');
@@ -39,7 +39,7 @@
       '<button data-orden="falladas" class="' + (orden === 'falladas' ? 'activo' : '') + '">Más falladas primero</button></div></div>' +
       '<p class="pequeno suave">Haz clic en una pregunta para ver qué contestaron los alumnos.</p><div class="an-preguntas">';
     lista.forEach((q) => {
-      h += '<details class="an-preg"><summary><span class="num">' + q.n + '</span><span class="an-enun">' + (q.inciso ? '<b>' + esc(q.inciso) + '</b> ' : '') + esc(q.enunciado) + '</span>' +
+      h += '<details class="an-preg"><summary><span class="num">' + q.n + '</span><span class="an-enun">' + (q.inciso ? '<b>' + esc(q.inciso) + '</b> ' : '') + formato(q.enunciado) + '</span>' +
         '<span class="an-barra"><i class="' + color(q.pct_aciertos) + '" style="width:' + Math.max(2, q.pct_aciertos) + '%"></i></span>' +
         '<span class="an-pct ' + color(q.pct_aciertos) + '">' + q.pct_aciertos + '%</span><span class="pequeno suave an-cuenta">' + q.correctas + '/' + q.total + '</span></summary>' +
         '<div class="an-detalle">' + detallePregunta(q) + '</div></details>';
@@ -71,7 +71,7 @@
   }
 
   function detallePregunta(q) {
-    let h = '<div class="an-enun-completo">' + esc(q.enunciado) + '</div>';
+    let h = '<div class="an-enun-completo">' + formato(q.enunciado) + '</div>';
     if (q.tipo === 'opcion') {
       const correcta = String(q.respuesta).charAt(0);
       const total = q.total || 1;
@@ -79,7 +79,7 @@
         const l = String.fromCharCode(65 + i);
         const nVotos = q.distribucion[l] || 0;
         const pct = Math.round((nVotos / total) * 100);
-        return '<div class="an-op' + (l === correcta ? ' correcta' : '') + '"><span class="an-op-txt">' + (l === correcta ? '✓ ' : '') + esc(o) + '</span>' +
+        return '<div class="an-op' + (l === correcta ? ' correcta' : '') + '"><span class="an-op-txt">' + (l === correcta ? '✓ ' : '') + formato(o) + '</span>' +
           '<span class="an-barra"><i class="' + (l === correcta ? 'bueno' : 'malo') + '" style="width:' + Math.max(1, pct) + '%"></i></span><span class="pequeno">' + nVotos + ' (' + pct + '%)</span></div>';
       }).join('') + '</div>';
       const masElegida = Object.keys(q.distribucion).sort((a, b) => q.distribucion[b] - q.distribucion[a])[0];
@@ -92,7 +92,7 @@
         h += '<div class="pequeno" style="margin-top:6px"><b>Respuestas incorrectas más comunes:</b> ' +
           q.errores_comunes.map((e) => '<span class="chip-err">' + respuestaBonita(q.tipo, e.respuesta) + ' <span class="suave">×' + e.veces + '</span></span>').join(' ') + '</div>';
       }
-      if (q.tipo === 'abierta') h += '<div class="pequeno suave">Promedio: ' + q.promedio_puntos + ' de ' + q.puntos + ' puntos.</div>';
+      if (q.tipo === 'abierta' || q.tipo === 'codigo') h += '<div class="pequeno suave">Promedio: ' + q.promedio_puntos + ' de ' + q.puntos + ' puntos.</div>';
     }
     if (q.sin_respuesta) h += '<div class="pequeno suave" style="margin-top:6px">' + q.sin_respuesta + ' alumno(s) la dejaron sin contestar.</div>';
     return h;

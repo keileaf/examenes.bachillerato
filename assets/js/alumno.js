@@ -1,7 +1,7 @@
 /* Página del alumno: acceso con código, datos, reglas y examen con candados de seguridad. */
 (function () {
   'use strict';
-  const { llamar, Reloj, esc, renderMate, latex, leerNumero, leerConjunto, avisar, cargando, formatoTiempo } = window.Comun;
+  const { llamar, Reloj, esc, formato, bloqueCodigo, renderMate, latex, leerNumero, leerConjunto, avisar, cargando, formatoTiempo } = window.Comun;
   const $ = (id) => document.getElementById(id);
   const CLAVE_SESION = 'examenSeguro.sesion';
   const CLAVE_RESP = 'examenSeguro.respuestas.';
@@ -16,7 +16,7 @@
 
   // ───────────── Navegación entre pantallas ─────────────
   function mostrar(id) {
-    ['p-codigo', 'p-datos', 'p-reglas', 'p-examen', 'p-fin'].forEach((p) => { $(p).hidden = p !== id; });
+    ['p-codigo', 'p-datos', 'p-reglas', 'p-examen', 'p-fin', 'p-prueba'].forEach((p) => { $(p).hidden = p !== id; });
     document.body.classList.toggle('en-examen', id === 'p-examen');
     window.scrollTo(0, 0);
   }
@@ -98,7 +98,13 @@
     $('reglas-pastillas').innerHTML = [
       '📘 ' + esc(ex.titulo), '📝 ' + ex.totalPreguntas + ' preguntas', '⚠ ' + ex.maxAdvertencias + ' advertencias máximo'
     ].map((t) => '<span class="pastilla">' + t + '</span>').join('');
-    const reglas = [
+    const libre = ex.seguridad === 'LIBRE';
+    const reglas = libre ? [
+      ['💻', 'En este examen <b>sí puedes usar otros programas</b> de la computadora (por ejemplo, <b>Visual Studio Code</b>) y copiar y pegar tu código.', true],
+      ['🚫', 'No uses internet, chats ni inteligencia artificial, salvo que tu profesor lo indique.', false],
+      ['⏱', 'Tienes <b>' + ex.duracionMin + ' minutos</b>. Al terminar el tiempo, el examen se envía automáticamente con lo que hayas contestado.', false],
+      ['✓', 'Tus respuestas se guardan solas mientras contestas. Regresa a esta pestaña para seguir contestando.', false]
+    ] : [
       ['⛶', 'El examen se presenta en <b>pantalla completa</b>. No salgas de ella.', false],
       ['⇆', 'No cambies de pestaña ni de ventana, ni abras otros programas. Cada salida se registra con la hora y el aplicador la ve en ese momento.', true],
       ['!', 'Cada salida es una <b>advertencia</b>' + (ex.requierePin ? ' y el examen se bloquea hasta que el aplicador lo desbloquee' : '') + '. Al llegar a <b>' + ex.maxAdvertencias + '</b>, tu examen se envía solo.', true],
@@ -110,7 +116,8 @@
     $('reglas-instrucciones').innerHTML = ex.instrucciones ? '<div class="mensaje info">' + esc(ex.instrucciones) + '</div>' : '';
     $('chk-reglas').checked = false;
     $('btn-comenzar').disabled = true;
-    $('btn-comenzar').textContent = reanudar ? 'Continuar en pantalla completa' : 'Comenzar en pantalla completa';
+    $('btn-comenzar').textContent = libre ? (reanudar ? 'Continuar examen' : 'Comenzar examen') : (reanudar ? 'Continuar en pantalla completa' : 'Comenzar en pantalla completa');
+    $('reglas-pastillas').innerHTML += libre ? '<span class="pastilla">🔓 Sin candados: puedes usar otros programas</span>' : '';
     mensaje('msg-reglas', '');
   }
   function fechaLarga(iso) {
@@ -134,7 +141,7 @@
 
   $('btn-comenzar').addEventListener('click', async () => {
     const btn = $('btn-comenzar');
-    await entrarPantallaCompleta(); // debe ocurrir dentro del clic
+    if (!E.info || E.info.seguridad !== 'LIBRE') await entrarPantallaCompleta(); // debe ocurrir dentro del clic
     cargando(btn, true, 'Preparando tu examen…');
     try {
       const datos = Object.assign({ codigo: E.codigo, token: E.token, navegador: navigator.userAgent }, E.datos || {});
@@ -170,12 +177,16 @@
     pintarAdvertencias();
     mostrar('p-examen');
     E.activo = true;
-    activarGuardias();
+    E.seguridad = r.seguridad === 'LIBRE' ? 'LIBRE' : 'COMPLETA';
+    pintarAdvertencias();
+    if (E.seguridad === 'COMPLETA') activarGuardias();
     iniciarReloj();
     iniciarAutoguardado();
-    if (window.screen && window.screen.isExtended) leve('PANTALLA_EXTENDIDA', 'El equipo tiene más de una pantalla conectada.');
-    if (r.bloqueado) { E.enInfraccion = true; mostrarBloqueo('Tu examen está bloqueado.'); }
-    else if (!enPantallaCompleta() && soportaPantallaCompleta()) { E.enInfraccion = true; mostrarBloqueo('Activa la pantalla completa para continuar.', true); }
+    if (E.seguridad === 'COMPLETA') {
+      if (window.screen && window.screen.isExtended) leve('PANTALLA_EXTENDIDA', 'El equipo tiene más de una pantalla conectada.');
+      if (r.bloqueado) { E.enInfraccion = true; mostrarBloqueo('Tu examen está bloqueado.'); }
+      else if (!enPantallaCompleta() && soportaPantallaCompleta()) { E.enInfraccion = true; mostrarBloqueo('Activa la pantalla completa para continuar.', true); }
+    }
     E.sucio = Object.keys(r.respuestas || {}).length !== Object.keys(E.respuestas).length;
     if (E.situacion === 'REANUDAR' && !r.bloqueado && r.advertencias > 0) {
       avisar('Recargar o cerrar la página cuenta como advertencia (' + r.advertencias + ' de ' + E.max + ').', 'peligro', 7000);
@@ -210,7 +221,19 @@
     actualizarProgreso();
   }
 
-  function contestada(id) { return String(E.respuestas[id] == null ? '' : E.respuestas[id]).trim() !== ''; }
+  function contestada(id) { return !esVacia(E.respuestas[id]); }
+  /** Las respuestas de completar, relacionar y crucigrama son JSON: cuentan si tienen algo escrito. */
+  function esVacia(v) {
+    const t = String(v == null ? '' : v).trim();
+    if (!t) return true;
+    if (t.charAt(0) === '[' || t.charAt(0) === '{') {
+      try { const o = JSON.parse(t); return !Object.keys(o).some((k) => String(o[k] || '').trim()); } catch (e) { return false; }
+    }
+    return false;
+  }
+  function leerValor(id, porDefecto) {
+    try { const o = JSON.parse(E.respuestas[id]); return o && typeof o === 'object' ? o : porDefecto; } catch (e) { return porDefecto; }
+  }
 
   function actualizarProgreso() {
     const total = E.items.length;
@@ -261,8 +284,16 @@
       cuerpo = '<div class="opciones" role="radiogroup">' + it.opciones.map((o, i) => {
         const sel = valor === o.id;
         return '<label class="opcion' + (sel ? ' sel' : '') + '"><input type="radio" name="op-' + esc(it.id) + '" value="' + esc(o.id) + '"' + (sel ? ' checked' : '') + '>' +
-          '<span class="letra">' + String.fromCharCode(97 + i) + '</span><span>' + esc(o.texto) + '</span></label>';
+          '<span class="letra">' + String.fromCharCode(97 + i) + '</span><span>' + formato(o.texto) + '</span></label>';
       }).join('') + '</div>';
+    } else if (it.tipo === 'completar') {
+      cuerpo = htmlCompletar(it);
+    } else if (it.tipo === 'relacionar') {
+      cuerpo = htmlRelacionar(it);
+    } else if (it.tipo === 'crucigrama') {
+      cuerpo = htmlCrucigrama(it);
+    } else if (it.tipo === 'codigo') {
+      cuerpo = '<textarea class="entrada codigo-resp" data-resp maxlength="4000" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" wrap="off" placeholder="Escribe aquí tu código… (la tecla Tab pone sangría)">' + esc(valor) + '</textarea>';
     } else if (it.tipo === 'abierta') {
       cuerpo = '<textarea class="entrada" data-resp maxlength="2000" spellcheck="false" autocomplete="off" placeholder="Escribe tu respuesta…">' + esc(valor) + '</textarea>';
     } else {
@@ -270,16 +301,178 @@
       cuerpo = '<div class="resp-corta"><input class="entrada" data-resp maxlength="120" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="' + ph + '" value="' + esc(valor) + '">' +
         '<div class="vista" data-vista></div></div>';
     }
-    return '<div class="pregunta' + (valor.trim() ? ' contestada' : '') + '" data-id="' + esc(it.id) + '" data-tipo="' + esc(it.tipo) + '">' +
-      '<div class="enc"><span class="num">' + it.n + '</span><div class="texto">' + etiqueta + esc(it.enunciado) + '</div>' +
+    const ayudaTipo = { completar: it.modo === 'banco' ? 'Arrastra cada palabra a su espacio (o tócala para ponerla en el siguiente espacio vacío). Toca una palabra colocada para regresarla.' : 'Escribe la palabra que falta en cada espacio.',
+      relacionar: 'Elige, para cada elemento de la izquierda, la letra que le corresponde de la derecha.', crucigrama: 'Escribe una letra por casilla. Toca una pista para ir a su palabra.' }[it.tipo];
+    return '<div class="pregunta' + (!esVacia(valor) ? ' contestada' : '') + '" data-id="' + esc(it.id) + '" data-tipo="' + esc(it.tipo) + '">' +
+      '<div class="enc"><span class="num">' + it.n + '</span><div class="texto">' + etiqueta + (it.enunciado ? formato(it.enunciado) : '') + '</div>' +
       '<span class="pts">' + it.puntos + ' pt' + (it.puntos === 1 ? '' : 's') + '</span></div>' +
       (it.imagen ? '<img class="figura" src="' + esc(it.imagen) + '" alt="Figura de la pregunta ' + it.n + '" draggable="false">' : '') +
-      cuerpo + (it.ayuda ? '<div class="ayuda">' + esc(it.ayuda) + '</div>' : '') + '</div>';
+      cuerpo + (it.ayuda ? '<div class="ayuda">' + esc(it.ayuda) + '</div>' : (ayudaTipo ? '<div class="ayuda">' + ayudaTipo + '</div>' : '')) + '</div>';
+  }
+
+  // ───────────── Completar espacios ─────────────
+  function htmlCompletar(it) {
+    const dadas = leerValor(it.id, []);
+    const banco = it.modo === 'banco';
+    let h = '<div class="completar">' + it.partes.map((p) => {
+      if (p.t != null) return '<span class="cp-texto">' + esc(p.t) + '</span>';
+      const v = dadas[p.h] || '';
+      if (!banco) return '<input class="hueco" data-h="' + p.h + '" value="' + esc(v) + '" maxlength="80" autocomplete="off" spellcheck="false" aria-label="Espacio ' + (p.h + 1) + '" style="width:' + Math.max(7, Math.min(22, v.length + 3)) + 'ch">';
+      return '<span class="hueco-drop' + (v ? ' lleno' : '') + '" data-h="' + p.h + '" tabindex="0" role="button" aria-label="Espacio ' + (p.h + 1) + '">' + (v ? esc(v) : '&nbsp;') + '</span>';
+    }).join('') + '</div>';
+    if (banco) {
+      const usadas = {};
+      Object.values(dadas).forEach((w) => { if (w) usadas[w] = (usadas[w] || 0) + 1; });
+      h += '<div class="banco" aria-label="Banco de palabras">' + it.banco.map((w, i) => {
+        const usada = usadas[w] > 0;
+        if (usada) usadas[w]--;
+        return '<button type="button" class="palabra' + (usada ? ' usada' : '') + '" draggable="true" data-w="' + i + '"' + (usada ? ' disabled' : '') + '>' + esc(w) + '</button>';
+      }).join('') + '</div>';
+    }
+    return h;
+  }
+
+  function conectarCompletar(caja, it) {
+    const id = it.id;
+    const total = it.huecos;
+    const leer = () => { const a = leerValor(id, []); while (a.length < total) a.push(''); return a; };
+    const guardarYPintar = (a) => {
+      responder(id, a.some((x) => x) ? JSON.stringify(a) : '', caja);
+      if (it.modo === 'banco') {
+        const nueva = document.createElement('div');
+        nueva.innerHTML = htmlCompletar(it);
+        caja.querySelector('.completar').replaceWith(nueva.querySelector('.completar'));
+        caja.querySelector('.banco').replaceWith(nueva.querySelector('.banco'));
+        renderMate(caja.querySelector('.completar'));
+        conectarCompletar(caja, it);
+      }
+    };
+    if (it.modo !== 'banco') {
+      caja.querySelectorAll('input.hueco').forEach((inp) => inp.addEventListener('input', () => {
+        const a = leer();
+        a[Number(inp.dataset.h)] = inp.value;
+        inp.style.width = Math.max(7, Math.min(22, inp.value.length + 3)) + 'ch';
+        responder(id, a.some((x) => x.trim()) ? JSON.stringify(a) : '', caja);
+      }));
+      return;
+    }
+    let activo = caja.dataset.activo != null ? Number(caja.dataset.activo) : -1;
+    const colocar = (palabra, h) => {
+      const a = leer();
+      if (h < 0) h = a.findIndex((x) => !x);
+      if (h < 0) { avisar('Todos los espacios están llenos. Toca uno para vaciarlo.', '', 3000); return; }
+      a[h] = palabra;
+      delete caja.dataset.activo;
+      guardarYPintar(a);
+    };
+    caja.querySelectorAll('.palabra').forEach((b) => {
+      b.addEventListener('click', () => colocar(it.banco[Number(b.dataset.w)], activo));
+      b.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', b.dataset.w); e.dataTransfer.effectAllowed = 'move'; });
+    });
+    caja.querySelectorAll('.hueco-drop').forEach((hz) => {
+      const h = Number(hz.dataset.h);
+      hz.addEventListener('click', () => {
+        const a = leer();
+        if (a[h]) { a[h] = ''; caja.dataset.activo = h; guardarYPintar(a); return; }
+        caja.dataset.activo = h; activo = h;
+        caja.querySelectorAll('.hueco-drop').forEach((x) => x.classList.toggle('activo', x === hz));
+      });
+      hz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); hz.click(); } });
+      hz.addEventListener('dragover', (e) => { e.preventDefault(); hz.classList.add('sobre'); });
+      hz.addEventListener('dragleave', () => hz.classList.remove('sobre'));
+      hz.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const w = Number(e.dataTransfer.getData('text/plain'));
+        if (!isNaN(w) && it.banco[w] != null) colocar(it.banco[w], h);
+      });
+    });
+    if (activo >= 0) { const x = caja.querySelector('.hueco-drop[data-h="' + activo + '"]'); if (x) x.classList.add('activo'); }
+  }
+
+  // ───────────── Relacionar columnas ─────────────
+  function htmlRelacionar(it) {
+    const dadas = leerValor(it.id, {});
+    const letras = it.derecha.map((d) => d.id);
+    return '<div class="relacionar"><div class="rel-col"><div class="rel-tit">Columna A</div>' + it.izquierda.map((x) =>
+      '<div class="rel-item"><select class="entrada rel-sel" data-rel="' + x.i + '" aria-label="Letra para ' + esc(x.texto) + '"><option value="">—</option>' +
+      letras.map((l) => '<option value="' + l + '"' + (dadas[x.i] === l ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>' +
+      '<span class="rel-num">' + (x.i + 1) + '.</span><span class="rel-texto">' + esc(x.texto) + '</span></div>').join('') + '</div>' +
+      '<div class="rel-col"><div class="rel-tit">Columna B</div>' + it.derecha.map((d) =>
+        '<div class="rel-item der"><span class="rel-letra">' + d.id + '</span><span class="rel-texto">' + esc(d.texto) + '</span></div>').join('') + '</div></div>';
+  }
+  function conectarRelacionar(caja, it) {
+    caja.querySelectorAll('.rel-sel').forEach((sel) => sel.addEventListener('change', () => {
+      const a = leerValor(it.id, {});
+      if (sel.value) a[sel.dataset.rel] = sel.value; else delete a[sel.dataset.rel];
+      responder(it.id, Object.keys(a).length ? JSON.stringify(a) : '', caja);
+    }));
+  }
+
+  // ───────────── Crucigrama ─────────────
+  function htmlCrucigrama(it) {
+    const dadas = leerValor(it.id, {});
+    const blancas = new Set(it.casillas);
+    let t = '<div class="cruz-env"><table class="cruz" aria-label="Crucigrama"><tbody>';
+    for (let f = 0; f < it.alto; f++) {
+      t += '<tr>';
+      for (let c = 0; c < it.ancho; c++) {
+        const k = f + ',' + c;
+        if (!blancas.has(k)) { t += '<td class="cz-negra"></td>'; continue; }
+        const num = it.numeros[k];
+        t += '<td class="cz">' + (num ? '<span class="cz-n">' + num + '</span>' : '') +
+          '<input maxlength="1" data-k="' + k + '" value="' + esc(dadas[k] || '') + '" autocomplete="off" spellcheck="false" autocapitalize="characters" aria-label="Casilla ' + (f + 1) + ',' + (c + 1) + '"></td>';
+      }
+      t += '</tr>';
+    }
+    t += '</tbody></table></div><div class="cruz-pistas">';
+    [['horizontales', 'Horizontales →'], ['verticales', 'Verticales ↓']].forEach(([k, tit]) => {
+      if (!it.pistas[k].length) return;
+      t += '<div><div class="rel-tit">' + tit + '</div><ol>' + it.pistas[k].map((p) =>
+        '<li data-f="' + p.fila + '" data-c="' + p.col + '" data-dir="' + p.dir + '"><b>' + p.num + '.</b> ' + esc(p.pista) + ' <span class="suave">(' + p.largo + ')</span></li>').join('') + '</ol></div>';
+    });
+    return t + '</div>';
+  }
+  function conectarCrucigrama(caja, it) {
+    let dir = 'H';
+    const celda = (f, c) => caja.querySelector('input[data-k="' + f + ',' + c + '"]');
+    const guardarCruz = () => {
+      const a = {};
+      caja.querySelectorAll('.cruz input').forEach((i) => { if (i.value) a[i.dataset.k] = i.value; });
+      responder(it.id, Object.keys(a).length ? JSON.stringify(a) : '', caja);
+    };
+    caja.querySelectorAll('.cruz input').forEach((inp) => {
+      const [f, c] = inp.dataset.k.split(',').map(Number);
+      inp.addEventListener('focus', () => {
+        // Si la casilla solo pertenece a una palabra vertical, se escribe hacia abajo
+        if (!celda(f, c - 1) && !celda(f, c + 1)) dir = 'V';
+        else if (!celda(f - 1, c) && !celda(f + 1, c)) dir = 'H';
+        inp.select();
+      });
+      inp.addEventListener('input', () => {
+        inp.value = inp.value.toUpperCase().replace(/[^A-ZÑÁÉÍÓÚÜ]/g, '').slice(-1);
+        guardarCruz();
+        if (inp.value) { const sig = dir === 'H' ? celda(f, c + 1) : celda(f + 1, c); if (sig) sig.focus(); }
+      });
+      inp.addEventListener('keydown', (e) => {
+        const mover = { ArrowRight: [0, 1, 'H'], ArrowLeft: [0, -1, 'H'], ArrowDown: [1, 0, 'V'], ArrowUp: [-1, 0, 'V'] }[e.key];
+        if (mover) { e.preventDefault(); dir = mover[2]; const x = celda(f + mover[0], c + mover[1]); if (x) x.focus(); return; }
+        if (e.key === 'Backspace' && !inp.value) { const x = dir === 'H' ? celda(f, c - 1) : celda(f - 1, c); if (x) { x.focus(); x.value = ''; guardarCruz(); e.preventDefault(); } }
+      });
+    });
+    caja.querySelectorAll('.cruz-pistas li').forEach((li) => li.addEventListener('click', () => {
+      dir = li.dataset.dir;
+      const x = celda(Number(li.dataset.f), Number(li.dataset.c));
+      if (x) x.focus();
+    }));
   }
 
   function conectarPregunta(hoja) {
     hoja.querySelectorAll('.pregunta').forEach((caja) => {
       const id = caja.dataset.id, tipo = caja.dataset.tipo;
+      const it = E.items.find((x) => x.id === id);
+      if (tipo === 'completar') { conectarCompletar(caja, it); return; }
+      if (tipo === 'relacionar') { conectarRelacionar(caja, it); return; }
+      if (tipo === 'crucigrama') { conectarCrucigrama(caja, it); return; }
       if (tipo === 'opcion') {
         caja.querySelectorAll('input[type=radio]').forEach((r) => r.addEventListener('change', () => {
           caja.querySelectorAll('.opcion').forEach((o) => o.classList.toggle('sel', o.querySelector('input').checked));
@@ -290,6 +483,22 @@
         const vista = caja.querySelector('[data-vista]');
         const pintarVista = () => { if (vista) vistaPrevia(tipo, campo.value, vista); };
         campo.addEventListener('input', () => { responder(id, campo.value, caja); pintarVista(); });
+        if (tipo === 'codigo') campo.addEventListener('keydown', (e) => {
+          if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.metaKey) return;
+          e.preventDefault();
+          const i = campo.selectionStart, j = campo.selectionEnd, v = campo.value;
+          if (e.shiftKey) {
+            const ini = v.lastIndexOf('\n', i - 1) + 1;
+            const quitar = (v.slice(ini, ini + 4).match(/^ {1,4}/) || [''])[0].length;
+            if (!quitar) return;
+            campo.value = v.slice(0, ini) + v.slice(ini + quitar);
+            campo.selectionStart = campo.selectionEnd = Math.max(ini, i - quitar);
+          } else {
+            campo.value = v.slice(0, i) + '    ' + v.slice(j);
+            campo.selectionStart = campo.selectionEnd = i + 4;
+          }
+          responder(id, campo.value, caja);
+        });
         pintarVista();
       }
     });
@@ -309,7 +518,8 @@
 
   function responder(id, valor, caja) {
     E.respuestas[id] = valor;
-    if (caja) caja.classList.toggle('contestada', String(valor).trim() !== '');
+    if (caja) caja.classList.toggle('contestada', !esVacia(valor));
+    if (E.prueba) { actualizarProgreso(); return; }
     respaldoLocal();
     E.sucio = true;
     actualizarProgreso();
@@ -336,6 +546,8 @@
       $('sin-red').hidden = true;
       if (r.limite) E.limite = r.limite;
       if (typeof r.advertencias === 'number') { E.advertencias = r.advertencias; pintarAdvertencias(); }
+      if (r.seguridad && r.seguridad !== E.seguridad) { cambiarSeguridad(r.seguridad); return; }
+      if (E.seguridad === 'LIBRE') return;
       // El aplicador pudo desbloquear desde el panel
       if (E.enInfraccion && E.requierePin && r.bloqueado === false) permitirVolver();
       if (!E.enInfraccion && r.bloqueado) { E.enInfraccion = true; mostrarBloqueo('El aplicador bloqueó tu examen.'); }
@@ -396,6 +608,7 @@
   $('btn-env-ok').addEventListener('click', () => enviarExamen('ALUMNO'));
 
   async function enviarExamen(motivo) {
+    if (E.prueba) { calificarPrueba(); return; }
     if (E.enviando || E.terminado) return;
     E.enviando = true;
     const btn = $('btn-env-ok');
@@ -496,8 +709,8 @@
     copy(e) { e.preventDefault(); leve('INTENTO_COPIAR', 'Intentó copiar.'); },
     cut(e) { e.preventDefault(); leve('INTENTO_COPIAR', 'Intentó cortar.'); },
     paste(e) { e.preventDefault(); leve('INTENTO_PEGAR', 'Intentó pegar texto.'); avisar('No se permite pegar texto.', 'peligro'); },
-    dragstart(e) { e.preventDefault(); },
-    drop(e) { e.preventDefault(); },
+    dragstart(e) { if (!e.target.closest || !e.target.closest('.palabra')) e.preventDefault(); },
+    drop(e) { if (!e.target.closest || !e.target.closest('.hueco-drop')) e.preventDefault(); },
     selectstart(e) { if (!e.target.closest || !e.target.closest('input, textarea')) e.preventDefault(); },
     keydown(e) {
       const k = e.key || '';
@@ -578,7 +791,7 @@
 
   /** Evento grave: cuenta como advertencia. Una sola por cada "salida". */
   async function infraccion(tipo, detalle) {
-    if (!E.activo || E.terminado || E.descargando) return;
+    if (!E.activo || E.terminado || E.descargando || E.seguridad === 'LIBRE') return;
     if (E.enInfraccion) return;
     E.enInfraccion = true;
     E.ultimaInfraccion = Date.now();
@@ -588,6 +801,7 @@
     try {
       const r = await llamar('incidencia', { codigo: E.codigo, token: E.token, tipo, detalle, respuestas: E.respuestas }, { reintentos: 3 });
       if (r.enviado) { terminar('ADVERTENCIAS'); return; }
+      if (r.seguridad === 'LIBRE') { cambiarSeguridad('LIBRE'); return; }
       if (typeof r.advertencias === 'number') { E.advertencias = r.advertencias; pintarAdvertencias(); mostrarBloqueo(null); }
       E.sucio = false;
     } catch (err) {
@@ -604,7 +818,25 @@
     llamar('incidencia', { codigo: E.codigo, token: E.token, tipo, detalle }, { reintentos: 1 }).catch(() => {});
   }
 
+  /** El aplicador quitó o volvió a poner los candados desde el panel (parte práctica). */
+  function cambiarSeguridad(modo) {
+    if (E.terminado) return;
+    E.seguridad = modo === 'LIBRE' ? 'LIBRE' : 'COMPLETA';
+    if (E.seguridad === 'LIBRE') {
+      desactivarGuardias();
+      E.enInfraccion = false;
+      $('capa-bloqueo').hidden = true;
+      avisar('Tu profesor habilitó la parte práctica: ya puedes abrir otros programas (por ejemplo, Visual Studio Code) y copiar y pegar.', 'ok', 10000);
+    } else {
+      activarGuardias();
+      avisar('Tu profesor volvió a activar los candados del examen.', 'peligro', 8000);
+      if (soportaPantallaCompleta() && !enPantallaCompleta()) { E.enInfraccion = true; mostrarBloqueo('Tu profesor volvió a activar los candados. Regresa a pantalla completa para continuar.', true); }
+    }
+    pintarAdvertencias();
+  }
+
   function pintarAdvertencias() {
+    if (E.seguridad === 'LIBRE') { $('ex-advert').innerHTML = '<span class="barra-libre" title="Puedes usar otros programas">🔓 Sin candados</span>'; return; }
     let html = '<span>Advertencias</span>';
     for (let i = 0; i < E.max; i++) html += '<span class="punto' + (i < E.advertencias ? ' on' : '') + '"></span>';
     $('ex-advert').innerHTML = html;
@@ -668,7 +900,68 @@
     guardar(true);
   }
 
+  // ───────────── Modo prueba (el docente prueba su examen como si fuera alumno) ─────────────
+  async function iniciarPrueba(examenId) {
+    const token = (() => { try { return localStorage.getItem('examenSeguro.admin.prueba') || ''; } catch (e) { return ''; } })();
+    mostrar('p-examen');
+    $('ex-hoja').innerHTML = '<p class="suave">Cargando el examen…</p>';
+    try {
+      const r = await llamar('examenVistaAlumno', { tokenAdmin: token, examen_id: examenId });
+      E.prueba = true; E.codigo = 'PRUEBA'; E.examen = r.examen; E.grupos = r.grupos;
+      E.max = r.examen.maxAdvertencias; E.advertencias = 0; E.respuestas = {};
+      E.limite = Reloj.ahora() + (r.examen.duracionMin || 60) * 60000;
+      E.items = [];
+      E.grupos.forEach((g, gi) => g.items.forEach((it) => { it.n = E.items.length + 1; it.g = gi; E.items.push(it); }));
+      $('ex-titulo').textContent = r.examen.titulo;
+      const dx = r.examen.datos || {};
+      $('ex-datos').textContent = [dx.materia, dx.periodo, dx.semestre ? 'Semestre ' + dx.semestre : '', dx.docente].filter(Boolean).join(' · ');
+      $('ex-alumno').textContent = 'MODO PRUEBA · no se guarda nada y no hay candados';
+      $('ex-guardado').textContent = 'Modo prueba';
+      document.body.classList.add('modo-prueba');
+      construirNavegador();
+      irAGrupo(0);
+      pintarAdvertencias();
+      E.activo = true;
+      iniciarReloj();
+      document.title = 'Prueba · ' + r.examen.titulo;
+    } catch (err) {
+      $('ex-hoja').innerHTML = '<div class="mensaje error">' + esc(err.message) + ' Abre la prueba desde el panel (botón «Probar como alumno»).</div>';
+    }
+  }
+
+  async function calificarPrueba() {
+    if (E.enviando) return;
+    E.enviando = true;
+    const btn = $('btn-env-ok');
+    cargando(btn, true, 'Calificando…');
+    try {
+      const r = await llamar('examenProbar', { tokenAdmin: localStorage.getItem('examenSeguro.admin.prueba') || '', examen_id: new URLSearchParams(location.search).get('prueba'), respuestas: E.respuestas }, { espera: 120000 });
+      clearInterval(E.tReloj);
+      $('modal-enviar').hidden = true;
+      const marca = { CORRECTA: ['✓', 'ok'], INCORRECTA: ['✗', 'mal'], PARCIAL: ['½', 'parcial'], POR_REVISAR: ['?', 'parcial'], SIN_RESPUESTA: ['–', 'mal'] };
+      $('prueba-res').innerHTML = '<div class="prueba-cal"><div><div class="suave pequeno">Calificación de la prueba</div><div class="prueba-num">' + r.calificacion.toFixed(1) + '</div>' +
+        '<div class="suave">' + r.puntos + ' de ' + r.puntos_max + ' puntos</div></div>' +
+        '<div class="pequeno suave">Así quedaría calificado un alumno con estas respuestas. ' +
+        (r.ia === 'OK' ? 'Las preguntas abiertas las calificó la IA.' : r.ia === 'ERROR' ? 'La IA no respondió; las abiertas quedaron pendientes.' : 'Sin IA configurada, las abiertas quedan pendientes para calificar a mano.') + '</div></div>' +
+        r.items.map((it) => {
+          const m = marca[it.resultado] || ['', ''];
+          return '<div class="prueba-item ' + m[1] + '"><div class="prueba-cab"><b>' + it.n + '.</b> <span class="prueba-enun">' + (it.inciso ? esc(it.inciso) + ' ' : '') + formato(it.enunciado || '') + '</span>' +
+            '<span class="prueba-pts ' + m[1] + '">' + m[0] + ' ' + it.puntos + '/' + it.puntos_max + '</span></div>' +
+            '<div class="prueba-resp"><div><b>Respuesta</b>' + (it.tipo === 'codigo' && it.respuesta_alumno ? bloqueCodigo(it.respuesta_alumno) : '<pre>' + esc(it.respuesta_alumno || '—') + '</pre>') + '</div>' +
+            '<div><b>Correcta / guía</b>' + (it.tipo === 'codigo' && it.respuesta_correcta ? bloqueCodigo(it.respuesta_correcta) : '<pre>' + esc(it.respuesta_correcta || '—') + '</pre>') + '</div></div>' +
+            (it.nota ? '<div class="prueba-nota">🤖 ' + esc(it.nota) + '</div>' : '') + '</div>';
+        }).join('');
+      renderMate($('prueba-res'));
+      mostrar('p-prueba');
+    } catch (err) {
+      avisar(err.message, 'peligro', 6000);
+    } finally { E.enviando = false; cargando(btn, false); }
+  }
+  $('btn-prueba-otra').addEventListener('click', () => location.reload());
+
   // ───────────── Inicio ─────────────
+  const pruebaId = new URLSearchParams(location.search).get('prueba');
+  if (pruebaId) { iniciarPrueba(pruebaId); return; }
   const ses = leerSesion();
   if (ses && ses.codigo) {
     $('in-codigo').value = ses.codigo;
