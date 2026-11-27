@@ -132,7 +132,7 @@
   function examenPorId(id) { return (A.datos.examenes || []).find((x) => x.examen_id === id) || {}; }
 
   function pintarSelectores() {
-    const opts = A.datos.examenes.map((x) => '<option value="' + esc(x.examen_id) + '">' + esc(x.titulo) + '</option>').join('');
+    const opts = A.datos.examenes.filter((x) => !x.archivado || x.examen_id === A.examenSel).map((x) => '<option value="' + esc(x.examen_id) + '">' + esc(x.titulo) + '</option>').join('');
     const s = $('sel-examen');
     if (s.dataset.opts !== opts) { s.innerHTML = opts; s.dataset.opts = opts; }
     s.value = A.examenSel;
@@ -141,7 +141,7 @@
     $('lista-grupos').innerHTML = grupos.map((g) => '<option value="' + esc(g) + '">').join('');
     const sr = $('sel-res-examen');
     const optsRes = '<option value="">Todos los exámenes</option>' + A.datos.examenes.filter((x) => A.datos.resultados.some((r) => r.examen_id === x.examen_id))
-      .map((x) => '<option value="' + esc(x.examen_id) + '">' + esc(x.titulo) + '</option>').join('');
+      .map((x) => '<option value="' + esc(x.examen_id) + '">' + esc(x.titulo) + (x.archivado ? ' (archivado)' : '') + '</option>').join('');
     if (sr.dataset.opts !== optsRes) { sr.innerHTML = optsRes; sr.dataset.opts = optsRes; }
     if (A.resExamen && !A.datos.resultados.some((r) => r.examen_id === A.resExamen)) A.resExamen = '';
     sr.value = A.resExamen;
@@ -313,6 +313,8 @@
     $('conf-extra').innerHTML = '';
     const ok = $('conf-ok');
     ok.className = 'btn' + (tipo ? ' ' + tipo : '');
+    ok.disabled = false;
+    ok.textContent = 'Confirmar';
     ok.onclick = async () => {
       cargando(ok, true);
       try { await alConfirmar(); cerrarModal('m-confirmar'); } catch (err) { avisar(err.message, 'peligro', 5000); } finally { cargando(ok, false); }
@@ -540,14 +542,18 @@
   // ───────────── Exámenes ─────────────
   function pintarCarpetas() {
     const carpetas = (A.datos.carpetas || []).slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { numeric: true }));
-    if (A.carpetaSel && A.carpetaSel !== '__sin' && !carpetas.some((c) => c.carpeta_id === A.carpetaSel)) A.carpetaSel = '';
-    const cuenta = (id) => A.datos.examenes.filter((x) => (id === '__sin' ? !x.carpeta || !carpetas.some((c) => c.carpeta_id === x.carpeta) : x.carpeta === id)).length;
+    if (A.carpetaSel && A.carpetaSel !== '__sin' && A.carpetaSel !== '__arch' && !carpetas.some((c) => c.carpeta_id === A.carpetaSel)) A.carpetaSel = '';
+    const vigentes = A.datos.examenes.filter((x) => !x.archivado);
+    const archivados = A.datos.examenes.length - vigentes.length;
+    if (A.carpetaSel === '__arch' && !archivados) A.carpetaSel = '';
+    const cuenta = (id) => vigentes.filter((x) => (id === '__sin' ? !x.carpeta || !carpetas.some((c) => c.carpeta_id === x.carpeta) : x.carpeta === id)).length;
     const item = (id, ico, nombre, n, editable) => '<div class="carp' + (A.carpetaSel === id ? ' activa' : '') + '" data-carp="' + esc(id) + '"><span class="carp-ico">' + ico + '</span><span class="carp-nom">' + esc(nombre) + '</span><span class="carp-n">' + n + '</span>' +
       (editable ? '<span class="carp-acc"><button class="ico-btn" data-carp-acc="renombrar" data-id="' + esc(id) + '" title="Renombrar">✎</button><button class="ico-btn rojo" data-carp-acc="borrar" data-id="' + esc(id) + '" title="Eliminar carpeta">✕</button></span>' : '') + '</div>';
-    let h = '<div class="carp-tit">Carpetas</div>' + item('', '🗂', 'Todos los exámenes', A.datos.examenes.length, false);
+    let h = '<div class="carp-tit">Carpetas</div>' + item('', '🗂', 'Todos los exámenes', vigentes.length, false);
     carpetas.forEach((c) => { h += item(c.carpeta_id, '📁', c.nombre, cuenta(c.carpeta_id), true); });
     const sin = cuenta('__sin');
     if (carpetas.length && sin) h += item('__sin', '📄', 'Sin carpeta', sin, false);
+    if (archivados) h += '<div class="carp-sep"></div>' + item('__arch', '📦', 'Archivados', archivados, false);
     h += '<button class="btn secundario chico bloque" data-carp-acc="nueva" style="margin-top:10px">+ Nueva carpeta</button>';
     $('carpetas-nav').innerHTML = h;
     const tipos = Object.keys(TIPOS_EX).filter((t) => A.datos.examenes.some((x) => x.tipo_examen === t));
@@ -562,6 +568,8 @@
     const nombreCarpeta = (id) => (carpetas.find((c) => c.carpeta_id === id) || {}).nombre;
     if (A.tipoSel && !A.datos.examenes.some((x) => x.tipo_examen === A.tipoSel)) A.tipoSel = '';
     const lista = A.datos.examenes.filter((x) => {
+      if (A.carpetaSel === '__arch') return !!x.archivado && (!A.tipoSel || x.tipo_examen === A.tipoSel);
+      if (x.archivado) return false;
       if (A.tipoSel && x.tipo_examen !== A.tipoSel) return false;
       if (!A.carpetaSel) return true;
       if (A.carpetaSel === '__sin') return !x.carpeta || !nombreCarpeta(x.carpeta);
@@ -570,6 +578,10 @@
     if (!A.datos.examenes.length) {
       $('lista-examenes').innerHTML = '<div class="vacio-grande"><h3>Aún no tienes exámenes</h3><p class="suave">Crea uno desde cero o importa el que ya tienes en PDF o fotos.</p>' +
         '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button class="btn secundario" data-acc-ex="importar">✨ Importar con IA</button><button class="btn" data-acc-ex="nuevo">+ Nuevo examen</button></div></div>';
+      return;
+    }
+    if (!lista.length && !A.carpetaSel && A.datos.examenes.every((x) => x.archivado)) {
+      $('lista-examenes').innerHTML = '<div class="vacio-grande"><h3>Todos tus exámenes están archivados</h3><p class="suave">Los encuentras en «📦 Archivados», en la lista de carpetas.</p><button class="btn" data-acc-ex="nuevo">+ Nuevo examen</button></div>';
       return;
     }
     if (!lista.length) {
@@ -583,7 +595,7 @@
       const id = esc(x.examen_id);
       const grupos = Array.from(new Set(n.map((c) => c.grupo).filter(Boolean)));
       return '<div class="tarjeta-ex"><div class="tx-cab"><div><span class="tipo-ex t-' + esc(x.tipo_examen) + '">' + esc(TIPOS_EX[x.tipo_examen] || '') + '</span>' + (x.seguridad === 'LIBRE' ? ' <span class="tipo-ex t-LIBRE" title="Examen práctico: el alumno puede usar otros programas">🔓 Sin candados</span>' : '') + '<h3>' + esc(x.titulo) + '</h3></div>' +
-        (x.activo ? '<span class="estado COMPLETO">ACTIVO</span>' : '<span class="estado ANULADO">INACTIVO</span>') + '</div>' +
+        (x.archivado ? '<span class="estado ARCHIVADO">📦 ARCHIVADO</span>' : x.activo ? '<span class="estado COMPLETO">ACTIVO</span>' : '<span class="estado ANULADO">INACTIVO</span>') + '</div>' +
         '<div class="suave pequeno">' + esc([x.materia, x.semestre ? 'Semestre ' + x.semestre : '', x.fecha_aplicacion ? 'Aplicación ' + x.fecha_aplicacion.split('-').reverse().join('/') : ''].filter(Boolean).join(' · ')) + (admin ? ' · <b>' + esc(x.propietario_nombre) + '</b>' : '') +
         (x.carpeta && nombreCarpeta(x.carpeta) && !A.carpetaSel ? ' · 📁 ' + esc(nombreCarpeta(x.carpeta)) : '') + '</div>' +
         '<div class="tx-datos"><span>📝 ' + x.total_preguntas + ' preguntas · ' + fmt(x.puntos_max) + ' pts</span><span>⏱ ' + x.duracion_min + ' min</span>' +
@@ -598,8 +610,9 @@
         '<button data-acc-ex="prev" data-id="' + id + '">Vista previa con respuestas</button>' +
         '<button data-acc-ex="mover" data-id="' + id + '">Mover a carpeta…</button>' +
         '<button data-acc-ex="duplicar" data-id="' + id + '">Duplicar</button>' +
-        '<button data-acc-ex="activo" data-id="' + id + '">' + (x.activo ? 'Desactivar' : 'Activar') + '</button>' +
-        (x.usado ? '' : '<button class="rojo" data-acc-ex="eliminar" data-id="' + id + '">Eliminar</button>') +
+        (x.archivado ? '' : '<button data-acc-ex="activo" data-id="' + id + '">' + (x.activo ? 'Desactivar' : 'Activar') + '</button>') +
+        '<button data-acc-ex="archivar" data-id="' + id + '">' + (x.archivado ? '📤 Sacar del archivo' : '📦 Archivar') + '</button>' +
+        (x.usado ? '<button class="rojo" data-acc-ex="eliminar-todo" data-id="' + id + '">🗑 Eliminar por completo…</button>' : '<button class="rojo" data-acc-ex="eliminar" data-id="' + id + '">🗑 Eliminar</button>') +
         '</div></div></div>' +
         (x.usado ? '<div class="pequeno suave" style="margin-top:8px">Ya se aplicó: sus preguntas quedan fijas. Para cambiarlas, duplícalo.</div>' : '') + '</div>';
     }).join('');
@@ -707,6 +720,35 @@
           } catch (err) { avisar(err.message, 'peligro', 5000); }
         })();
         break;
+      case 'archivar':
+        (async () => {
+          try {
+            await api('examenArchivar', { examen_id: id, archivar: !x.archivado });
+            avisar(x.archivado ? 'El examen volvió a «Mis exámenes» (sigue inactivo: actívalo para aplicarlo).' : 'Examen archivado y desactivado. Lo encuentras en «📦 Archivados»; sus resultados siguen disponibles.', 'ok', 6000);
+            refrescar();
+          } catch (err) { avisar(err.message, 'peligro', 5000); }
+        })();
+        break;
+      case 'eliminar-todo': {
+        const res = A.datos.resultados.filter((r) => r.examen_id === id).length;
+        const cods = A.datos.codigos.filter((c) => c.examen_id === id).length;
+        confirmar('Eliminar por completo', '', 'peligro', async () => {
+          const r = await api('examenEliminar', { examen_id: id, completo: true, confirmacion: $('conf-escribe').value }, { espera: 120000 });
+          avisar('Examen eliminado por completo · ' + r.borrado.resultados + ' resultado(s) y ' + r.borrado.respuestas + ' respuesta(s) borrados', 'ok', 7000);
+          refrescar();
+        });
+        $('conf-texto').innerHTML = 'Se borrará <b>«' + esc(x.titulo) + '»</b> con <b>todo</b>: sus preguntas, ' + cods + ' código(s), <b>' + res + ' calificación(es) de alumnos</b>, sus respuestas, incidencias e imágenes. <b>No se puede deshacer.</b>' +
+          '<br><br>Si necesitas guardar evidencias, primero descárgalas desde el menú ⋯ › 📁 Evidencias, o el CSV en Resultados. Si solo quieres quitarlo de la vista, mejor <b>📦 Archívalo</b>.';
+        $('conf-extra').innerHTML = '<label class="pequeno" for="conf-escribe">Para confirmar, escribe el nombre del examen: <b>' + esc(x.titulo) + '</b></label>' +
+          '<input class="entrada" id="conf-escribe" autocomplete="off" spellcheck="false" style="margin-top:6px">';
+        const okBtn = $('conf-ok');
+        const norm = (t) => String(t || '').trim().replace(/\s+/g, ' ').toLowerCase();
+        okBtn.disabled = true;
+        okBtn.textContent = 'Eliminar para siempre';
+        $('conf-escribe').addEventListener('input', (ev) => { okBtn.disabled = norm(ev.target.value) !== norm(x.titulo); });
+        setTimeout(() => $('conf-escribe').focus(), 50);
+        break;
+      }
       case 'eliminar':
         confirmar('Eliminar examen', 'Se eliminará «' + x.titulo + '» con sus preguntas y sus códigos sin usar. Esto no se puede deshacer.', 'peligro', async () => {
           await api('examenEliminar', { examen_id: id });

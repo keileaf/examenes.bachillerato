@@ -35,7 +35,7 @@
   }
   function cfgNueva() {
     const A = P().A;
-    const carpeta = A.carpetaSel && A.carpetaSel !== '__sin' ? A.carpetaSel : '';
+    const carpeta = A.carpetaSel && A.carpetaSel !== '__sin' && A.carpetaSel !== '__arch' ? A.carpetaSel : '';
     return {
       tipo_examen: A.tipoSel || 'PERIODO_1', carpeta,
       docente: (A.ses && A.ses.rol !== 'admin' && A.ses.nombre) || '', semestre: ultimoSemestre(), fecha_aplicacion: '', valor_porcentaje: 35,
