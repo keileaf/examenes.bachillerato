@@ -18,8 +18,18 @@
 
   const ED = { id: '', cfg: null, bloques: [], usado: false, sucio: false, propietario: '' };
 
+  const TIPOS_EX = [['PERIODO_1', 'Primer periodo'], ['PERIODO_2', 'Segundo periodo'], ['PERIODO_3', 'Tercer periodo'], ['SEMESTRAL', 'Semestral'], ['ADMISION', 'Admisión'], ['OTRO', 'Otro']];
+  /** El semestre del examen más reciente del docente, para no escribirlo cada vez. */
+  function ultimoSemestre() {
+    const ex = (P().A.datos && P().A.datos.examenes || []).filter((x) => x.semestre).sort((a, b) => (b.actualizado || 0) - (a.actualizado || 0))[0];
+    return ex ? ex.semestre : '';
+  }
   function cfgNueva() {
+    const A = P().A;
+    const carpeta = A.carpetaSel && A.carpetaSel !== '__sin' ? A.carpetaSel : '';
     return {
+      tipo_examen: A.tipoSel || 'PERIODO_1', carpeta,
+      docente: (A.ses && A.ses.rol !== 'admin' && A.ses.nombre) || '', semestre: ultimoSemestre(), fecha_aplicacion: '', valor_porcentaje: 35,
       titulo: '', materia: (P().A.ses && P().A.ses.materia) || '', nivel: '', duracion_min: 50, max_advertencias: 3, pin_aplicador: '',
       aleatorizar_opciones: true, aleatorizar_preguntas: false, instrucciones: 'Haz tus procedimientos en una hoja. No se permite el uso de celular.', activo: true
     };
@@ -31,7 +41,7 @@
 
   // ───────────── Abrir ─────────────
   function nuevo() {
-    ED.id = ''; ED.cfg = cfgNueva(); ED.usado = false; ED.sucio = false;
+    ED.id = ''; ED.cfg = cfgNueva(); ED.usado = false; ED.sucio = false; ED.respaldo = null;
     ED.bloques = [{ seccion: 'I. ', grupo: '', preguntas: [preguntaNueva('opcion')] }];
     mostrar();
     setTimeout(() => { const t = $('ed-cuerpo').querySelector('[data-cfg="titulo"]'); if (t) t.focus(); }, 60);
@@ -40,23 +50,25 @@
   async function abrir(id) {
     try {
       const d = await P().api('examenObtener', { examen_id: id });
-      ED.id = id; ED.cfg = d.examen; ED.usado = d.usado; ED.sucio = false;
+      ED.id = id; ED.cfg = d.examen; ED.usado = d.usado; ED.sucio = false; ED.respaldo = null;
       ED.bloques = agrupar(d.preguntas.map((q) => Object.assign({ avisos: [] }, q)));
       if (!ED.bloques.length) ED.bloques = [{ seccion: '', grupo: '', preguntas: [preguntaNueva()] }];
       mostrar();
     } catch (err) { avisar(err.message, 'peligro', 5000); }
   }
 
-  function desdeBorrador(b) {
-    ED.id = ''; ED.usado = false; ED.sucio = true;
+  function desdeBorrador(b, extraCfg) {
+    ED.id = ''; ED.usado = false; ED.sucio = true; ED.respaldo = null;
     ED.cfg = Object.assign(cfgNueva(), {
       titulo: b.titulo || '', materia: b.materia || cfgNueva().materia, nivel: b.nivel || '', instrucciones: b.instrucciones || cfgNueva().instrucciones
-    });
+    }, quitarVacios({ docente: b.docente, semestre: b.semestre, fecha_aplicacion: b.fecha_aplicacion, tipo_examen: b.tipo_examen, valor_porcentaje: b.valor_porcentaje }), extraCfg || {});
     ED.bloques = agrupar(b.preguntas);
     mostrar();
     const revisar = b.preguntas.filter((q) => q.avisos && q.avisos.length).length;
     avisar('Listo: ' + b.preguntas.length + ' preguntas.' + (revisar ? ' Revisa las ' + revisar + ' marcadas en amarillo antes de guardar.' : ' Revísalas y guarda.'), 'ok', 8000);
   }
+
+  function quitarVacios(o) { const r = {}; Object.keys(o).forEach((k) => { if (o[k] !== '' && o[k] != null) r[k] = o[k]; }); return r; }
 
   function agrupar(preguntas) {
     const bloques = [];
@@ -100,6 +112,8 @@
     $('ed-resumen').textContent = t.n + ' pregunta' + (t.n === 1 ? '' : 's') + ' · ' + t.pts + ' puntos';
     $('ed-estado').textContent = ED.sucio ? '● Sin guardar' : (ED.id ? '✓ Guardado' : '');
     $('ed-estado').className = 'pequeno ' + (ED.sucio ? 'texto-aviso' : 'texto-ok');
+    $('ed-variar').hidden = ED.usado;
+    $('ed-deshacer').hidden = !ED.respaldo;
   }
   function marcarSucio() { ED.sucio = true; pintarResumen(); }
 
@@ -112,12 +126,23 @@
       html += '<div class="mensaje aviso">Este examen ya se aplicó, así que <b>sus preguntas no se pueden cambiar</b> (afectaría las calificaciones). Aquí solo puedes ajustar la configuración. Para cambiar preguntas, usa <b>Duplicar</b> desde «Mis exámenes».</div>';
     }
     html += '<div class="ed-tarjeta"><div class="ed-tarjeta-tit">Datos del examen</div>' +
-      '<div class="campo"><label>Título del examen <span class="req">*</span></label><input class="entrada" data-cfg="titulo" maxlength="150" placeholder="Ej. Segundo parcial · Física II" value="' + esc(c.titulo) + '"></div>' +
+      '<div class="fila-ed-titulo"><div class="campo"><label>Título del examen <span class="req">*</span></label><input class="entrada" data-cfg="titulo" maxlength="150" placeholder="Ej. Segundo periodo · Física II" value="' + esc(c.titulo) + '"></div>' +
+      '<div class="campo"><label>Periodo / tipo <span class="req">*</span></label><select class="entrada" data-cfg="tipo_examen">' + TIPOS_EX.map((t) => '<option value="' + t[0] + '"' + (c.tipo_examen === t[0] ? ' selected' : '') + '>' + t[1] + '</option>').join('') + '</select>' +
+      '<span class="ayuda">En admisión se pide escuela de procedencia y promedio.</span></div>' +
+      '<div class="campo"><label>Carpeta</label><select class="entrada" data-cfg="carpeta"><option value="">(Sin carpeta)</option>' + carpetasPropias().map((k) => '<option value="' + esc(k.carpeta_id) + '"' + (c.carpeta === k.carpeta_id ? ' selected' : '') + '>' + esc(k.nombre) + '</option>').join('') + '</select></div></div>' +
+      '<div class="ed-sub-tit">Datos que verán el alumno y el PDF de resultados</div>' +
       '<div class="fila-3">' +
-      '<div class="campo"><label>Materia</label><input class="entrada" data-cfg="materia" maxlength="80" value="' + esc(c.materia) + '"></div>' +
-      '<div class="campo"><label>Grado / grupo</label><input class="entrada" data-cfg="nivel" maxlength="120" placeholder="Ej. 4° semestre · Grupo B" value="' + esc(c.nivel) + '"></div>' +
-      '<div class="campo"><label>Duración (minutos)</label><input class="entrada" type="number" min="5" max="300" data-cfg="duracion_min" value="' + esc(c.duracion_min) + '"></div>' +
-      '</div><div class="fila-3">' +
+      '<div class="campo"><label>Docente <span class="req">*</span></label><input class="entrada" data-cfg="docente" maxlength="100" placeholder="Ej. Mtra. Ana Laura Ruiz" value="' + esc(c.docente) + '"></div>' +
+      '<div class="campo"><label>Materia <span class="req">*</span></label><input class="entrada" data-cfg="materia" maxlength="80" value="' + esc(c.materia) + '"></div>' +
+      '<div class="campo"><label>Grado / grupo(s)</label><input class="entrada" data-cfg="nivel" maxlength="120" placeholder="Ej. 4° semestre" value="' + esc(c.nivel) + '"></div>' +
+      '</div><div class="fila-4">' +
+      '<div class="campo"><label>Semestre' + reqSiNoAdm(c) + '</label><input class="entrada mono" data-cfg="semestre" maxlength="6" placeholder="2026-1" value="' + esc(c.semestre) + '"><span class="ayuda">Año y 1 o 2, ej. 2026-1</span></div>' +
+      '<div class="campo"><label>Fecha de aplicación' + reqSiNoAdm(c) + '</label><input class="entrada" type="date" data-cfg="fecha_aplicacion" value="' + esc(c.fecha_aplicacion) + '"></div>' +
+      '<div class="campo"><label>Valor del examen (%)</label><input class="entrada" type="number" min="1" max="100" step="0.5" data-cfg="valor_porcentaje" placeholder="35" value="' + esc(c.valor_porcentaje) + '"><span class="ayuda">Cuánto vale en la calificación del ' + (c.tipo_examen === 'SEMESTRAL' ? 'semestre' : 'periodo') + '.</span></div>' +
+      '<div class="campo"><label>Duración (minutos) <span class="req">*</span></label><input class="entrada" type="number" min="5" max="300" data-cfg="duracion_min" value="' + esc(c.duracion_min) + '"><span class="ayuda">Al terminar el tiempo se envía solo.</span></div>' +
+      '</div>' +
+      '<div class="ed-sub-tit">Aplicación</div>' +
+      '<div class="fila-3">' +
       '<div class="campo"><label>Advertencias antes de enviarse solo</label><input class="entrada" type="number" min="1" max="10" data-cfg="max_advertencias" value="' + esc(c.max_advertencias) + '"></div>' +
       '<div class="campo"><label>PIN del aplicador (opcional)</label><input class="entrada" data-cfg="pin_aplicador" maxlength="12" placeholder="Ej. 4821" value="' + esc(c.pin_aplicador) + '"><span class="ayuda">Con PIN, el examen se bloquea en cada salida hasta que lo escribas.</span></div>' +
       '<div class="campo"><label>Opciones</label>' +
@@ -152,6 +177,12 @@
     window.scrollTo(0, y);
   }
   const dis = (b) => (b ? ' disabled' : '');
+  const reqSiNoAdm = (c) => (c.tipo_examen === 'ADMISION' ? '' : ' <span class="req">*</span>');
+  function carpetasPropias() {
+    const A = P().A;
+    const dueno = ED.cfg.propietario || (A.ses && A.ses.usuario);
+    return (A.datos && A.datos.carpetas || []).filter((k) => A.ses.rol !== 'admin' || k.propietario === dueno);
+  }
 
   function htmlPregunta(q, bi, qi, n, bloq) {
     const id = 'b' + bi + 'q' + qi;
@@ -161,6 +192,7 @@
       '<select class="entrada ed-tipo" data-q-campo="tipo"' + dis(bloq) + '>' + TIPOS.map((t) => '<option value="' + t[0] + '"' + (q.tipo === t[0] ? ' selected' : '') + '>' + t[1] + '</option>').join('') + '</select>' +
       '<label class="ed-pts"><input class="entrada" type="number" min="0.5" max="100" step="0.5" data-q-campo="puntos" value="' + esc(q.puntos) + '"' + dis(bloq) + '> pts</label>' +
       (bloq ? '' : '<div class="ed-iconos"><button class="ico-btn" data-acc="q-subir" title="Subir">↑</button><button class="ico-btn" data-acc="q-bajar" title="Bajar">↓</button>' +
+        '<button class="ico-btn" data-acc="q-variar" title="Variar esta pregunta con IA">✨</button>' +
         '<button class="ico-btn" data-acc="q-duplicar" title="Duplicar">⧉</button><button class="ico-btn rojo" data-acc="q-borrar" title="Eliminar">✕</button></div>') +
       '</div>';
     if (q.avisos && q.avisos.length) {
@@ -228,7 +260,9 @@
     if (t.dataset.cfg) {
       const k = t.dataset.cfg;
       ED.cfg[k] = t.type === 'checkbox' ? t.checked : t.value;
+      if (k === 'semestre') ED.cfg[k] = t.value.replace(/\s/g, '');
       marcarSucio();
+      if (k === 'tipo_examen') pintar();
       return;
     }
     const caja = t.closest('[data-b]');
@@ -357,6 +391,7 @@
       }
       case 'img-quitar': bloque.preguntas[qi].imagen_url = ''; break;
       case 'img-subir': elegirImagen(bloque.preguntas[qi]); return;
+      case 'q-variar': variar([bloque.preguntas[qi]], b); return;
       default: return;
     }
     marcarSucio();
@@ -422,7 +457,17 @@
 
   // ───────────── Guardar ─────────────
   function validar() {
-    if (String(ED.cfg.titulo || '').trim().length < 3) return { msg: 'Escribe el título del examen.', sel: '[data-cfg="titulo"]' };
+    const c = ED.cfg;
+    if (String(c.titulo || '').trim().length < 3) return { msg: 'Escribe el título del examen.', sel: '[data-cfg="titulo"]' };
+    if (String(c.docente || '').trim().length < 3) return { msg: 'Escribe el nombre del docente.', sel: '[data-cfg="docente"]' };
+    if (String(c.materia || '').trim().length < 2) return { msg: 'Escribe la materia.', sel: '[data-cfg="materia"]' };
+    const sem = String(c.semestre || '').replace(/\s/g, '');
+    if (sem && !/^\d{4}-[12]$/.test(sem)) return { msg: 'El semestre se escribe como 2026-1 o 2026-2.', sel: '[data-cfg="semestre"]' };
+    if (c.tipo_examen !== 'ADMISION') {
+      if (!sem) return { msg: 'Escribe el semestre (ej. 2026-1).', sel: '[data-cfg="semestre"]' };
+      if (!c.fecha_aplicacion) return { msg: 'Indica la fecha de aplicación.', sel: '[data-cfg="fecha_aplicacion"]' };
+    }
+    if (c.valor_porcentaje !== '' && c.valor_porcentaje != null && !(Number(c.valor_porcentaje) > 0 && Number(c.valor_porcentaje) <= 100)) return { msg: 'El valor del examen debe estar entre 1 y 100%.', sel: '[data-cfg="valor_porcentaje"]' };
     if (ED.usado) return null;
     let n = 0;
     for (let bi = 0; bi < ED.bloques.length; bi++) {
@@ -478,6 +523,7 @@
       const r = await P().api('examenGuardar', datos);
       ED.id = r.examen_id;
       ED.sucio = false;
+      ED.respaldo = null;
       pintarResumen();
       avisar('Examen guardado ✓', 'ok');
       P().refrescar();
@@ -630,7 +676,8 @@
         }, { espera: 180000, reintentos: 1 });
         if (IA.cancelado || $('m-importar').hidden) throw new Error('Se canceló la conversión.');
         const b = r.borrador;
-        if (i === 0) Object.assign(borrador, { titulo: b.titulo, materia: b.materia, nivel: b.nivel, instrucciones: b.instrucciones });
+        if (i === 0) Object.assign(borrador, { titulo: b.titulo, materia: b.materia, nivel: b.nivel, instrucciones: b.instrucciones,
+          docente: b.docente, semestre: b.semestre, fecha_aplicacion: b.fecha_aplicacion, tipo_examen: b.tipo_examen, valor_porcentaje: b.valor_porcentaje });
         borrador.preguntas = borrador.preguntas.concat(b.preguntas);
         const ult = b.preguntas[b.preguntas.length - 1];
         if (ult) { seccion = ult.seccion; grupo = ult.grupo; }
@@ -650,5 +697,124 @@
   });
   $('ia-cancelar').addEventListener('click', () => { IA.cancelado = true; IA.resultadoParcial = null; });
 
-  window.Editor = { nuevo, abrir, importar, desdeBorrador };
+  // ───────────── Variar preguntas con IA ─────────────
+  const LOTE_IA = 6; // preguntas por llamada (cada llamada debe terminar en menos de ~60 s)
+
+  /** Pide a la IA variaciones de las preguntas dadas y las aplica en su lugar (q se modifica). */
+  async function variarLista(lista, progreso) {
+    for (let i = 0; i < lista.length; i += LOTE_IA) {
+      const lote = lista.slice(i, i + LOTE_IA);
+      if (progreso) progreso(i, lista.length);
+      const r = await P().api('examenVariarIA', {
+        preguntas: lote.map((q) => ({ tipo: q.tipo, enunciado: q.enunciado, opciones: q.opciones, respuesta: q.respuesta }))
+      }, { espera: 120000, reintentos: 1 });
+      r.preguntas.forEach((v, k) => {
+        const q = lote[k];
+        q.enunciado = v.enunciado;
+        if (q.tipo === 'opcion') { q.opciones = v.opciones; q.respuesta = v.respuesta; } else q.respuesta = v.respuesta;
+        q.avisos = (v.avisos || []).concat(q.imagen_url ? ['Esta pregunta tiene imagen: revisa que siga correspondiendo.'] : []);
+      });
+    }
+    if (progreso) progreso(lista.length, lista.length);
+  }
+
+  async function variar(lista, boton) {
+    if (P().A.datos && P().A.datos.sesion && !P().A.datos.sesion.ia) {
+      avisar('La IA no está configurada. Pide al administrador que ponga la clave de IA en la hoja Config.', 'peligro', 7000); return;
+    }
+    const respaldo = JSON.parse(JSON.stringify(ED.bloques));
+    if (boton) cargando(boton, true, lista.length > 1 ? 'Variando…' : '');
+    try {
+      await variarLista(lista, (i, n) => { if (n > 1) avisar('La IA está variando las preguntas… ' + Math.min(n, i + LOTE_IA) + ' de ' + n, '', 120000); });
+      ED.respaldo = respaldo;
+      marcarSucio(); pintar();
+      avisar(lista.length > 1 ? 'Listo: revisa las preguntas marcadas en amarillo antes de guardar.' : 'Pregunta variada: revísala.', 'ok', 7000);
+    } catch (err) {
+      avisar(err.message, 'peligro', 7000);
+    } finally { if (boton) cargando(boton, false); }
+  }
+
+  $('ed-variar').addEventListener('click', () => {
+    const todas = [];
+    ED.bloques.forEach((b) => b.preguntas.forEach((q) => todas.push(q)));
+    P().confirmar('Variar todas las preguntas con IA', 'La IA cambiará valores y datos de las ' + todas.length + ' preguntas y recalculará sus respuestas. Podrás deshacerlo antes de guardar. Tarda unos segundos por cada ' + LOTE_IA + ' preguntas.', '', async () => {
+      P().cerrarModal('m-confirmar');
+      await variar(todas, $('ed-variar'));
+    });
+  });
+  $('ed-deshacer').addEventListener('click', () => {
+    if (!ED.respaldo) return;
+    ED.bloques = ED.respaldo; ED.respaldo = null;
+    marcarSucio(); pintar();
+    avisar('Se restauraron las preguntas originales.', 'ok');
+  });
+
+  // ───────────── Crear semestral a partir de los periodos ─────────────
+  const ORDEN_TIPO = { PERIODO_1: 1, PERIODO_2: 2, PERIODO_3: 3 };
+  function semestral() {
+    const A = P().A;
+    const exs = A.datos.examenes.filter((x) => x.tipo_examen !== 'ADMISION' && x.tipo_examen !== 'SEMESTRAL' && x.total_preguntas > 0)
+      .sort((a, b) => (ORDEN_TIPO[a.tipo_examen] || 9) - (ORDEN_TIPO[b.tipo_examen] || 9) || a.titulo.localeCompare(b.titulo, 'es'));
+    if (!exs.length) { avisar('Primero crea tus exámenes de periodo.', 'peligro', 5000); return; }
+    const nombres = { PERIODO_1: 'Primer periodo', PERIODO_2: 'Segundo periodo', PERIODO_3: 'Tercer periodo', OTRO: 'Otro' };
+    $('sem-lista').innerHTML = exs.map((x) => '<label class="sem-item"><input type="checkbox" data-sem="' + esc(x.examen_id) + '"' + (ORDEN_TIPO[x.tipo_examen] ? ' checked' : '') + '>' +
+      '<div><b>' + esc(x.titulo) + '</b><div class="pequeno suave">' + esc([nombres[x.tipo_examen], x.materia, x.total_preguntas + ' preguntas · ' + x.puntos_max + ' pts'].filter(Boolean).join(' · ')) + '</div></div></label>').join('');
+    const materia = (exs[0] && exs[0].materia) || '';
+    $('sem-titulo').value = 'Examen semestral' + (materia ? ' · ' + materia : '');
+    $('sem-ia').checked = false;
+    $('sem-ia-caja').hidden = !(A.datos.sesion && A.datos.sesion.ia);
+    $('msg-sem').innerHTML = ''; $('sem-progreso').hidden = true;
+    $('m-semestral').hidden = false;
+  }
+
+  function revolver(arr) { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+  $('sem-ok').addEventListener('click', async () => {
+    const ids = Array.from($('sem-lista').querySelectorAll('[data-sem]:checked')).map((x) => x.dataset.sem);
+    if (!ids.length) { $('msg-sem').innerHTML = '<div class="mensaje error">Elige al menos un examen.</div>'; return; }
+    const btn = $('sem-ok');
+    cargando(btn, true, 'Creando…');
+    $('msg-sem').innerHTML = '';
+    try {
+      const preguntas = [];
+      let materia = '', nivel = '';
+      for (const id of ids) {
+        const d = await P().api('examenObtener', { examen_id: id });
+        materia = materia || d.examen.materia; nivel = nivel || d.examen.nivel;
+        let bloques = agrupar(d.preguntas.map((q) => Object.assign({}, q)));
+        bloques.forEach((b) => {
+          let qs = b.preguntas;
+          if ($('sem-orden').checked) qs = revolver(qs);
+          qs.forEach((q) => {
+            if ($('sem-opciones').checked && q.tipo === 'opcion' && q.opciones.length > 1) {
+              const correcta = q.opciones[q.respuesta.charCodeAt(0) - 65];
+              const nuevas = revolver(q.opciones);
+              q.opciones = nuevas;
+              q.respuesta = String.fromCharCode(65 + nuevas.indexOf(correcta));
+            }
+            q.seccion = d.examen.titulo + (b.seccion ? ' — ' + b.seccion : '');
+            q.grupo = b.grupo;
+            q.inciso = '';
+            q.avisos = [];
+            preguntas.push(q);
+          });
+        });
+      }
+      if ($('sem-ia').checked) {
+        $('sem-progreso').hidden = false;
+        await variarLista(preguntas, (i, n) => {
+          $('sem-barra').style.width = Math.round((i / n) * 100) + '%';
+          $('sem-texto').textContent = 'La IA está variando las preguntas: ' + Math.min(n, i + LOTE_IA) + ' de ' + n + '…';
+        });
+      }
+      $('m-semestral').hidden = true;
+      desdeBorrador({ titulo: $('sem-titulo').value, materia, nivel, instrucciones: cfgNueva().instrucciones, preguntas },
+        { tipo_examen: 'SEMESTRAL', duracion_min: 90 });
+      if (!$('sem-ia').checked) avisar('Semestral armado con ' + preguntas.length + ' preguntas. Puedes quitar preguntas, editarlas o usar «✨ Variar con IA».', 'ok', 8000);
+    } catch (err) {
+      $('msg-sem').innerHTML = '<div class="mensaje error">' + esc(err.message) + '</div>';
+    } finally { cargando(btn, false); }
+  });
+
+  window.Editor = { nuevo, abrir, importar, desdeBorrador, semestral };
 })();

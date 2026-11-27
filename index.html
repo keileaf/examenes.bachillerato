@@ -55,6 +55,7 @@
             <input id="in-apellidos" class="entrada" maxlength="80" autocomplete="off">
           </div>
         </div>
+        <div id="datos-admision">
         <div class="campo">
           <label for="in-escuela">Escuela de procedencia <span class="req">*</span></label>
           <input id="in-escuela" class="entrada" maxlength="120" autocomplete="off" placeholder="Ej. Secundaria Técnica No. 5">
@@ -63,6 +64,7 @@
           <label for="in-promedio">Promedio aproximado <span class="req">*</span></label>
           <input id="in-promedio" class="entrada" maxlength="4" inputmode="decimal" autocomplete="off" placeholder="Ej. 8.7">
           <span class="ayuda">Entre 5.0 y 10.0</span>
+        </div>
         </div>
         <div id="msg-datos"></div>
         <div style="display:flex; gap:10px; justify-content:space-between">
@@ -84,6 +86,7 @@
       <div class="tarjeta ancha">
         <h1 id="reglas-titulo">Antes de empezar</h1>
         <p class="sub" id="reglas-sub"></p>
+        <div id="reglas-ficha"></div>
         <div class="datos-examen" id="reglas-pastillas"></div>
         <ul class="reglas" id="lista-reglas"></ul>
         <div id="reglas-instrucciones"></div>
@@ -99,7 +102,7 @@
     <div class="marca-agua" id="marca-agua"></div>
     <header class="barra">
       <img class="logo" src="assets/img/logo-clp.png" alt="">
-      <div class="titulo"><b id="ex-titulo"></b><span id="ex-alumno"></span></div>
+      <div class="titulo"><b id="ex-titulo"></b><span id="ex-datos" class="ex-datos"></span><span id="ex-alumno"></span></div>
       <div class="advert" id="ex-advert" title="Advertencias"></div>
       <div class="guardado" id="ex-guardado">—</div>
       <div class="reloj" id="ex-reloj">--:--</div>

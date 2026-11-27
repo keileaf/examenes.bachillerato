@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const CLAVE_TOKEN = 'examenSeguro.admin';
 
-  const A = { token: '', ses: null, datos: null, vista: 'examenes', resExamen: '', examenSel: '', incVistas: null, tRefresco: null, cargandoResumen: false };
+  const A = { token: '', ses: null, datos: null, vista: 'examenes', resExamen: '', resGrupo: '', carpetaSel: '', tipoSel: '', examenSel: '', incVistas: null, tRefresco: null, cargandoResumen: false };
 
   const TIPOS_INC = {
     INICIO_EXAMEN: ['Inició el examen', ''], EXAMEN_ENVIADO: ['Examen enviado', ''],
@@ -18,6 +18,7 @@
     SESION_LIBERADA: ['Sesión liberada', ''], REANUDO_OTRO_EQUIPO: ['Continuó en otro equipo', ''],
     ADVERTENCIA_RETIRADA: ['Advertencia retirada', ''], TIEMPO_EXTRA: ['Tiempo extra', '']
   };
+  const TIPOS_EX = { ADMISION: 'Admisión', PERIODO_1: '1er periodo', PERIODO_2: '2º periodo', PERIODO_3: '3er periodo', SEMESTRAL: 'Semestral', OTRO: 'Otro' };
   const MOTIVOS = { ALUMNO: 'Lo envió el alumno', TIEMPO: 'Se acabó el tiempo', ADVERTENCIAS: 'Límite de advertencias', APLICADOR: 'Forzado por el aplicador' };
 
   // ───────────── Sesión ─────────────
@@ -136,6 +137,8 @@
     if (s.dataset.opts !== opts) { s.innerHTML = opts; s.dataset.opts = opts; }
     s.value = A.examenSel;
     $('gen-examen').innerHTML = A.datos.examenes.filter((x) => x.activo).map((x) => '<option value="' + esc(x.examen_id) + '">' + esc(x.titulo) + '</option>').join('');
+    const grupos = Array.from(new Set(A.datos.codigos.map((c) => c.grupo).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+    $('lista-grupos').innerHTML = grupos.map((g) => '<option value="' + esc(g) + '">').join('');
     const sr = $('sel-res-examen');
     const optsRes = '<option value="">Todos los exámenes</option>' + A.datos.examenes.filter((x) => A.datos.resultados.some((r) => r.examen_id === x.examen_id))
       .map((x) => '<option value="' + esc(x.examen_id) + '">' + esc(x.titulo) + '</option>').join('');
@@ -176,7 +179,8 @@
     if (!cods.length) html += '<tr><td colspan="8" class="vacio">No hay códigos para este examen. Usa «Generar códigos».</td></tr>';
     cods.forEach((c) => {
       const estado = c.estado === 'EN_CURSO' && c.bloqueado ? '<span class="estado BLOQUEADO">BLOQUEADO</span>' : '<span class="estado ' + c.estado + '">' + c.estado.replace('_', ' ') + '</span>';
-      const alumno = c.nombre ? '<b>' + esc(c.nombre + ' ' + c.apellidos) + '</b><div class="pequeno suave">' + esc(c.escuela) + ' · Prom. ' + esc(c.promedio) + '</div>' : '<span class="suave">' + esc(c.etiqueta || '—') + '</span>';
+      const extra = [c.grupo ? 'Grupo ' + c.grupo : '', c.escuela, c.promedio ? 'Prom. ' + c.promedio : ''].filter(Boolean).join(' · ');
+      const alumno = c.nombre ? '<b>' + esc(c.nombre + ' ' + c.apellidos) + '</b><div class="pequeno suave">' + esc(extra) + '</div>' : '<span class="suave">' + esc(c.grupo ? 'Grupo ' + c.grupo : (c.etiqueta || '—')) + '</span>';
       const avance = c.estado === 'EN_CURSO' || c.estado === 'ENVIADO'
         ? '<span class="mini-barra"><i style="width:' + (total ? Math.round(c.contestadas / total * 100) : 0) + '%"></i></span><span class="pequeno">' + c.contestadas + '/' + total + '</span>' : '';
       let adv = '<span class="puntos-adv">';
@@ -292,9 +296,10 @@
     const btn = $('btn-gen-ok');
     cargando(btn, true, 'Generando…');
     try {
-      const r = await api('adminGenerarCodigos', { examen_id: $('gen-examen').value, cantidad: Number($('gen-cantidad').value), etiqueta: $('gen-etiqueta').value });
+      if (!$('gen-etiqueta').value.trim()) throw new Error('Escribe el grupo, ej. 3°B.');
+      const r = await api('adminGenerarCodigos', { examen_id: $('gen-examen').value, cantidad: Number($('gen-cantidad').value), grupo: $('gen-etiqueta').value });
       cerrarModal('m-generar');
-      A.ultimos = { codigos: r.codigos, examen: r.examen, etiqueta: $('gen-etiqueta').value };
+      A.ultimos = { codigos: r.codigos, examen: r.examen, etiqueta: r.grupo };
       $('cod-examen').textContent = r.examen + ' · ' + r.codigos.length + ' código' + (r.codigos.length === 1 ? '' : 's');
       $('cod-lista').innerHTML = r.codigos.map((c) => '<div>' + esc(c) + '</div>').join('');
       $('m-codigos').hidden = false;
@@ -309,36 +314,47 @@
   });
   $('btn-imprimir').addEventListener('click', () => {
     const url = new URL('index.html', location.href).href;
-    $('zona-impresion').innerHTML = A.ultimos.codigos.map((c) => '<div class="ficha"><div class="peq">Colegio La Paz · ' + esc(A.ultimos.examen) + '</div>' +
+    $('zona-impresion').innerHTML = A.ultimos.codigos.map((c) => '<div class="ficha"><div class="peq">Colegio La Paz · ' + esc(A.ultimos.examen) + ' · Grupo ' + esc(A.ultimos.etiqueta) + '</div>' +
       '<div class="peq">Nombre: ______________________________________________</div><div class="cod">' + esc(c) + '</div>' +
       '<div class="peq">Entra a <b>' + esc(url) + '</b> y escribe este código. Es personal y sirve una sola vez.</div></div>').join('');
     window.print();
   });
 
   // ───────────── Resultados ─────────────
-  $('sel-res-examen').addEventListener('change', (e) => { A.resExamen = e.target.value; pintarResultados(); });
-  $('btn-analisis').addEventListener('click', () => window.Analisis.abrir(A.resExamen));
-  $('btn-pdfs').addEventListener('click', () => window.Analisis.pdf(A.resExamen, null, $('btn-pdfs')));
+  $('sel-res-examen').addEventListener('change', (e) => { A.resExamen = e.target.value; A.resGrupo = ''; pintarResultados(); });
+  $('sel-res-grupo').addEventListener('change', (e) => { A.resGrupo = e.target.value; pintarResultados(); });
+  $('btn-analisis').addEventListener('click', () => window.Analisis.abrir(A.resExamen, A.resGrupo));
+  $('btn-pdfs').addEventListener('click', () => window.Analisis.pdf(A.resExamen, null, $('btn-pdfs'), A.resGrupo));
+  $('btn-evidencias').addEventListener('click', () => window.Analisis.evidencias(A.resExamen));
   function pintarResultados() {
     const porRevisar = A.datos.resultados.filter((r) => r.estado === 'POR_REVISAR').length;
-    const res = A.datos.resultados.filter((r) => !A.resExamen || r.examen_id === A.resExamen)
+    const delExamen = A.datos.resultados.filter((r) => !A.resExamen || r.examen_id === A.resExamen);
+    const grupos = Array.from(new Set(delExamen.map((r) => r.grupo || ''))).filter(Boolean).sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+    if (A.resGrupo && grupos.indexOf(A.resGrupo) < 0) A.resGrupo = '';
+    const sg = $('sel-res-grupo');
+    const optsG = '<option value="">Todos los grupos</option>' + grupos.map((g) => '<option value="' + esc(g) + '">Grupo ' + esc(g) + '</option>').join('');
+    if (sg.dataset.opts !== optsG) { sg.innerHTML = optsG; sg.dataset.opts = optsG; }
+    sg.value = A.resGrupo;
+    sg.hidden = grupos.length < 2;
+    const res = delExamen.filter((r) => !A.resGrupo || r.grupo === A.resGrupo)
       .sort((a, b) => A.resExamen ? (a.apellidos + a.nombre).localeCompare(b.apellidos + b.nombre, 'es') : b.enviado - a.enviado);
     $('btn-analisis').disabled = !A.resExamen;
     $('btn-pdfs').disabled = !A.resExamen;
     $('cnt-revisar').hidden = !porRevisar;
     $('cnt-revisar').textContent = porRevisar;
-    let html = '<thead><tr><th>Alumno</th><th>Escuela</th><th>Prom.</th><th>Calificación</th><th>Puntos</th><th>Advert.</th><th>Envío</th><th>Estado</th><th></th></tr></thead><tbody>';
-    if (!res.length) html += '<tr><td colspan="9" class="vacio">Aún no hay exámenes enviados.</td></tr>';
+    const conEscuela = res.some((r) => r.escuela);
+    let html = '<thead><tr><th>Alumno</th><th>Grupo</th>' + (conEscuela ? '<th>Escuela</th><th>Prom.</th>' : '') + '<th>Calificación</th><th>Puntos</th><th>Advert.</th><th>Envío</th><th>Estado</th><th></th></tr></thead><tbody>';
+    if (!res.length) html += '<tr><td colspan="10" class="vacio">Aún no hay exámenes enviados.</td></tr>';
     res.forEach((r) => {
       html += '<tr><td><b>' + esc(r.nombre + ' ' + r.apellidos) + '</b><div class="pequeno suave mono">' + esc(r.codigo) + ' · ' + esc(r.examen) + '</div></td>' +
-        '<td>' + esc(r.escuela) + '</td><td>' + esc(r.promedio) + '</td>' +
+        '<td>' + esc(r.grupo || '—') + '</td>' + (conEscuela ? '<td>' + esc(r.escuela) + '</td><td>' + esc(r.promedio) + '</td>' : '') +
         '<td><span class="calif">' + r.calificacion.toFixed(1) + '</span></td>' +
         '<td>' + fmt(r.puntos) + ' / ' + fmt(r.puntos_max) + '<div class="pequeno suave">' + r.porcentaje + '%</div></td>' +
         '<td>' + (r.advertencias ? '<span class="inc-grave">' + r.advertencias + '</span>' : '0') + '</td>' +
         '<td class="pequeno">' + fechaHora(r.enviado) + '<div class="suave">' + esc(MOTIVOS[r.motivo_envio] || r.motivo_envio) + ' · ' + r.minutos_usados + ' min</div></td>' +
         '<td><span class="estado ' + r.estado + '">' + (r.estado === 'POR_REVISAR' ? 'POR REVISAR (' + r.por_revisar + ')' : 'COMPLETO') + '</span></td>' +
         '<td class="nowrap"><button class="btn secundario chico" data-ver="' + esc(r.codigo) + '">Revisar</button> ' +
-        '<button class="btn secundario chico" data-pdf="' + esc(r.codigo) + '" data-ex="' + esc(r.examen_id) + '" title="Reporte del alumno en PDF">PDF</button></td></tr>';
+        '<button class="btn secundario chico" data-pdf="' + esc(r.codigo) + '" data-ex="' + esc(r.examen_id) + '" title="Descargar su examen evaluado en PDF">PDF</button></td></tr>';
     });
     $('tabla-resultados').innerHTML = html + '</tbody>';
   }
@@ -351,8 +367,8 @@
   });
 
   $('btn-csv').addEventListener('click', () => {
-    const cols = ['codigo', 'examen', 'nombre', 'apellidos', 'escuela', 'promedio', 'calificacion', 'puntos', 'puntos_max', 'porcentaje', 'advertencias', 'motivo_envio', 'minutos_usados', 'estado'];
-    const lista = A.datos.resultados.filter((r) => !A.resExamen || r.examen_id === A.resExamen);
+    const cols = ['codigo', 'examen', 'grupo', 'nombre', 'apellidos', 'escuela', 'promedio', 'calificacion', 'puntos', 'puntos_max', 'porcentaje', 'advertencias', 'motivo_envio', 'minutos_usados', 'estado'];
+    const lista = A.datos.resultados.filter((r) => (!A.resExamen || r.examen_id === A.resExamen) && (!A.resGrupo || r.grupo === A.resGrupo));
     const filas = [cols.join(',')].concat(lista.map((r) => cols.map((c) => '"' + String(r[c] == null ? '' : r[c]).replace(/"/g, '""') + '"').join(',')));
     const blob = new Blob(['﻿' + filas.join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -466,12 +482,42 @@
   }
 
   // ───────────── Exámenes ─────────────
+  function pintarCarpetas() {
+    const carpetas = (A.datos.carpetas || []).slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { numeric: true }));
+    if (A.carpetaSel && A.carpetaSel !== '__sin' && !carpetas.some((c) => c.carpeta_id === A.carpetaSel)) A.carpetaSel = '';
+    const cuenta = (id) => A.datos.examenes.filter((x) => (id === '__sin' ? !x.carpeta || !carpetas.some((c) => c.carpeta_id === x.carpeta) : x.carpeta === id)).length;
+    const item = (id, ico, nombre, n, editable) => '<div class="carp' + (A.carpetaSel === id ? ' activa' : '') + '" data-carp="' + esc(id) + '"><span class="carp-ico">' + ico + '</span><span class="carp-nom">' + esc(nombre) + '</span><span class="carp-n">' + n + '</span>' +
+      (editable ? '<span class="carp-acc"><button class="ico-btn" data-carp-acc="renombrar" data-id="' + esc(id) + '" title="Renombrar">✎</button><button class="ico-btn rojo" data-carp-acc="borrar" data-id="' + esc(id) + '" title="Eliminar carpeta">✕</button></span>' : '') + '</div>';
+    let h = '<div class="carp-tit">Carpetas</div>' + item('', '🗂', 'Todos los exámenes', A.datos.examenes.length, false);
+    carpetas.forEach((c) => { h += item(c.carpeta_id, '📁', c.nombre, cuenta(c.carpeta_id), true); });
+    const sin = cuenta('__sin');
+    if (carpetas.length && sin) h += item('__sin', '📄', 'Sin carpeta', sin, false);
+    h += '<button class="btn secundario chico bloque" data-carp-acc="nueva" style="margin-top:10px">+ Nueva carpeta</button>';
+    $('carpetas-nav').innerHTML = h;
+    const tipos = Object.keys(TIPOS_EX).filter((t) => A.datos.examenes.some((x) => x.tipo_examen === t));
+    $('filtro-tipos').innerHTML = tipos.length > 1 ? '<button class="' + (!A.tipoSel ? 'activo' : '') + '" data-tipo-ex="">Todos</button>' +
+      tipos.map((t) => '<button class="' + (A.tipoSel === t ? 'activo' : '') + '" data-tipo-ex="' + t + '">' + TIPOS_EX[t] + '</button>').join('') : '';
+  }
+
   function pintarExamenes() {
     const admin = A.ses && A.ses.rol === 'admin';
-    const lista = A.datos.examenes.slice().sort((a, b) => (b.actualizado || 0) - (a.actualizado || 0));
-    if (!lista.length) {
+    pintarCarpetas();
+    const carpetas = A.datos.carpetas || [];
+    const nombreCarpeta = (id) => (carpetas.find((c) => c.carpeta_id === id) || {}).nombre;
+    if (A.tipoSel && !A.datos.examenes.some((x) => x.tipo_examen === A.tipoSel)) A.tipoSel = '';
+    const lista = A.datos.examenes.filter((x) => {
+      if (A.tipoSel && x.tipo_examen !== A.tipoSel) return false;
+      if (!A.carpetaSel) return true;
+      if (A.carpetaSel === '__sin') return !x.carpeta || !nombreCarpeta(x.carpeta);
+      return x.carpeta === A.carpetaSel;
+    }).sort((a, b) => (b.actualizado || 0) - (a.actualizado || 0));
+    if (!A.datos.examenes.length) {
       $('lista-examenes').innerHTML = '<div class="vacio-grande"><h3>Aún no tienes exámenes</h3><p class="suave">Crea uno desde cero o importa el que ya tienes en PDF o fotos.</p>' +
         '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button class="btn secundario" data-acc-ex="importar">✨ Importar con IA</button><button class="btn" data-acc-ex="nuevo">+ Nuevo examen</button></div></div>';
+      return;
+    }
+    if (!lista.length) {
+      $('lista-examenes').innerHTML = '<div class="vacio-grande"><h3>Esta carpeta está vacía</h3><p class="suave">Crea un examen aquí o mueve uno con el menú ⋯ de su tarjeta.</p><button class="btn" data-acc-ex="nuevo">+ Nuevo examen en esta carpeta</button></div>';
       return;
     }
     $('lista-examenes').innerHTML = lista.map((x) => {
@@ -479,17 +525,21 @@
       const enviados = n.filter((c) => c.estado === 'ENVIADO').length;
       const enCurso = n.filter((c) => c.estado === 'EN_CURSO').length;
       const id = esc(x.examen_id);
-      return '<div class="tarjeta-ex"><div class="tx-cab"><h3>' + esc(x.titulo) + '</h3>' +
+      const grupos = Array.from(new Set(n.map((c) => c.grupo).filter(Boolean)));
+      return '<div class="tarjeta-ex"><div class="tx-cab"><div><span class="tipo-ex t-' + esc(x.tipo_examen) + '">' + esc(TIPOS_EX[x.tipo_examen] || '') + '</span><h3>' + esc(x.titulo) + '</h3></div>' +
         (x.activo ? '<span class="estado COMPLETO">ACTIVO</span>' : '<span class="estado ANULADO">INACTIVO</span>') + '</div>' +
-        '<div class="suave pequeno">' + esc([x.materia, x.nivel].filter(Boolean).join(' · ')) + (admin ? ' · <b>' + esc(x.propietario_nombre) + '</b>' : '') + '</div>' +
+        '<div class="suave pequeno">' + esc([x.materia, x.semestre ? 'Semestre ' + x.semestre : '', x.fecha_aplicacion ? 'Aplicación ' + x.fecha_aplicacion.split('-').reverse().join('/') : ''].filter(Boolean).join(' · ')) + (admin ? ' · <b>' + esc(x.propietario_nombre) + '</b>' : '') +
+        (x.carpeta && nombreCarpeta(x.carpeta) && !A.carpetaSel ? ' · 📁 ' + esc(nombreCarpeta(x.carpeta)) : '') + '</div>' +
         '<div class="tx-datos"><span>📝 ' + x.total_preguntas + ' preguntas · ' + fmt(x.puntos_max) + ' pts</span><span>⏱ ' + x.duracion_min + ' min</span>' +
-        '<span>🔑 ' + n.length + ' códigos</span><span>✅ ' + enviados + ' aplicados' + (enCurso ? ' · ' + enCurso + ' en curso' : '') + '</span></div>' +
+        '<span>🔑 ' + n.length + ' códigos' + (grupos.length ? ' · ' + esc(grupos.join(', ')) : '') + '</span><span>✅ ' + enviados + ' aplicados' + (enCurso ? ' · ' + enCurso + ' en curso' : '') + '</span></div>' +
         '<div class="tx-acc">' +
         '<button class="btn chico" data-acc-ex="editar" data-id="' + id + '">' + (x.usado ? 'Configurar' : 'Editar') + '</button>' +
         '<button class="btn secundario chico" data-acc-ex="prev" data-id="' + id + '">Vista previa</button>' +
         (x.activo ? '<button class="btn secundario chico" data-acc-ex="codigos" data-id="' + id + '">Generar códigos</button>' : '') +
-        (enviados ? '<button class="btn secundario chico" data-acc-ex="analisis" data-id="' + id + '">📊 Análisis</button>' : '') +
+        (enviados ? '<button class="btn secundario chico" data-acc-ex="resultados" data-id="' + id + '">📊 Resultados</button>' : '') +
         '<div class="menu-acc"><button class="btn secundario chico" data-menu-ex>⋯</button><div class="lista" hidden>' +
+        (enviados ? '<button data-acc-ex="analisis" data-id="' + id + '">📊 Análisis</button><button data-acc-ex="evidencias" data-id="' + id + '">📁 Evidencias</button>' : '') +
+        '<button data-acc-ex="mover" data-id="' + id + '">Mover a carpeta…</button>' +
         '<button data-acc-ex="duplicar" data-id="' + id + '">Duplicar</button>' +
         '<button data-acc-ex="activo" data-id="' + id + '">' + (x.activo ? 'Desactivar' : 'Activar') + '</button>' +
         (x.usado ? '' : '<button class="rojo" data-acc-ex="eliminar" data-id="' + id + '">Eliminar</button>') +
@@ -498,7 +548,58 @@
     }).join('');
   }
 
+  // Carpetas: elegir, crear, renombrar, borrar
+  $('carpetas-nav').addEventListener('click', (e) => {
+    const acc = e.target.closest('[data-carp-acc]');
+    if (acc) {
+      e.stopPropagation();
+      const id = acc.dataset.id;
+      const c = (A.datos.carpetas || []).find((x) => x.carpeta_id === id);
+      if (acc.dataset.carpAcc === 'nueva' || acc.dataset.carpAcc === 'renombrar') {
+        A.carpEdit = c || null;
+        $('carp-titulo').textContent = c ? 'Renombrar carpeta' : 'Nueva carpeta';
+        $('carp-nombre').value = c ? c.nombre : '';
+        $('msg-carp').innerHTML = '';
+        $('m-carpeta').hidden = false;
+        setTimeout(() => $('carp-nombre').focus(), 50);
+      } else if (acc.dataset.carpAcc === 'borrar') {
+        confirmar('Eliminar carpeta', 'Se eliminará la carpeta «' + c.nombre + '». Sus exámenes NO se borran: quedan «sin carpeta».', 'peligro', async () => {
+          await api('carpetaEliminar', { carpeta_id: id });
+          A.carpetaSel = '';
+          await refrescar();
+        });
+      }
+      return;
+    }
+    const it = e.target.closest('[data-carp]');
+    if (it) { A.carpetaSel = it.dataset.carp; pintarExamenes(); }
+  });
+  $('filtro-tipos').addEventListener('click', (e) => { const b = e.target.closest('[data-tipo-ex]'); if (b) { A.tipoSel = b.dataset.tipoEx; pintarExamenes(); } });
+  $('form-carpeta').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('btn-carp-ok');
+    cargando(btn, true);
+    try {
+      const r = await api('carpetaGuardar', { carpeta: { carpeta_id: A.carpEdit ? A.carpEdit.carpeta_id : '', nombre: $('carp-nombre').value } });
+      cerrarModal('m-carpeta');
+      A.carpetaSel = r.carpeta_id;
+      await refrescar();
+    } catch (err) { $('msg-carp').innerHTML = '<div class="mensaje error">' + esc(err.message) + '</div>'; } finally { cargando(btn, false); }
+  });
+  $('form-mover').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('btn-mov-ok');
+    cargando(btn, true);
+    try {
+      await api('examenMover', { examen_id: A.moverId, carpeta_id: $('mov-carpeta').value });
+      cerrarModal('m-mover');
+      avisar('Examen movido', 'ok');
+      await refrescar();
+    } catch (err) { avisar(err.message, 'peligro', 5000); } finally { cargando(btn, false); }
+  });
+
   $('btn-nuevo-examen').addEventListener('click', () => window.Editor.nuevo());
+  $('btn-semestral').addEventListener('click', () => window.Editor.semestral());
   $('btn-importar').addEventListener('click', () => window.Editor.importar());
   document.addEventListener('click', (e) => {
     const m = e.target.closest('[data-menu-ex]');
@@ -514,6 +615,22 @@
       case 'editar': window.Editor.abrir(id); break;
       case 'prev': vistaPrevia(id); break;
       case 'analisis': window.Analisis.abrir(id); break;
+      case 'evidencias': window.Analisis.evidencias(id); break;
+      case 'resultados': {
+        A.resExamen = id; A.resGrupo = '';
+        $('pestanas').querySelector('[data-v="resultados"]').click();
+        break;
+      }
+      case 'mover': {
+        const carpetas = (A.datos.carpetas || []).filter((c) => !A.ses || A.ses.rol !== 'admin' || c.propietario === x.propietario);
+        if (!carpetas.length) { avisar('Primero crea una carpeta con «+ Nueva carpeta».', 'peligro', 5000); break; }
+        A.moverId = id;
+        $('mov-examen').textContent = x.titulo;
+        $('mov-carpeta').innerHTML = '<option value="">(Sin carpeta)</option>' + carpetas.map((c) => '<option value="' + esc(c.carpeta_id) + '">' + esc(c.nombre) + '</option>').join('');
+        $('mov-carpeta').value = x.carpeta || '';
+        $('m-mover').hidden = false;
+        break;
+      }
       case 'codigos': $('gen-examen').value = id; $('msg-generar').innerHTML = ''; $('m-generar').hidden = false; break;
       case 'duplicar':
         confirmar('Duplicar examen', 'Se creará una copia de «' + x.titulo + '» que podrás editar libremente.', '', async () => {

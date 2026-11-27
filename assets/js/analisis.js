@@ -8,12 +8,12 @@
   const color = (pct) => (pct < 40 ? 'malo' : pct < 70 ? 'regular' : 'bueno');
 
   // ───────────── Análisis ─────────────
-  async function abrir(examenId) {
+  async function abrir(examenId, grupo) {
     if (!examenId) return;
     P().abrirCajon('Análisis', 'Cargando…');
     $('cajon').classList.add('ancho');
     try {
-      const d = await P().api('examenAnalisis', { examen_id: examenId });
+      const d = await P().api('examenAnalisis', { examen_id: examenId, grupo: grupo || '' });
       pintar(d, 'numero');
     } catch (err) {
       $('caj-cuerpo').innerHTML = '<div class="mensaje error">' + esc(err.message) + '</div>';
@@ -24,7 +24,7 @@
 
   function pintar(d, orden) {
     const r = d.resumen;
-    $('caj-titulo').textContent = 'Análisis · ' + d.examen.titulo;
+    $('caj-titulo').textContent = 'Análisis · ' + d.examen.titulo + (d.grupo ? ' · ' + d.grupo : '');
     $('caj-sub').textContent = r.aplicados + ' alumno' + (r.aplicados === 1 ? '' : 's') + ' · ' + d.preguntas.length + ' preguntas' + (r.por_revisar ? ' · ' + r.por_revisar + ' con preguntas abiertas por calificar' : '');
     if (!r.aplicados) { $('caj-cuerpo').innerHTML = '<p class="suave">Todavía nadie ha enviado este examen.</p>'; $('caj-pie').innerHTML = ''; return; }
     let h = '<div class="kpis compactos">' + [
@@ -65,8 +65,9 @@
     $('caj-cuerpo').querySelectorAll('[data-orden]').forEach((b) => b.addEventListener('click', () => pintar(d, b.dataset.orden)));
     $('caj-cuerpo').querySelectorAll('[data-an-pdf]').forEach((b) => b.addEventListener('click', () => pdf(d.examen.examen_id, [b.dataset.anPdf], b)));
     $('caj-pie').innerHTML = '<span class="suave pequeno">Las preguntas con menos de 40% de aciertos son buenas candidatas para repasar en clase.</span>' +
-      '<button class="btn" id="an-pdfs">📄 PDF de todos los alumnos</button>';
-    $('an-pdfs').addEventListener('click', () => pdf(d.examen.examen_id, null, $('an-pdfs')));
+      '<div style="display:flex;gap:8px"><button class="btn secundario" id="an-evid">📁 Evidencias</button><button class="btn" id="an-pdfs">📄 PDF de cada alumno</button></div>';
+    $('an-pdfs').addEventListener('click', () => pdf(d.examen.examen_id, null, $('an-pdfs'), d.grupo));
+    $('an-evid').addEventListener('click', () => abrirEvidencias(d.examen.examen_id));
   }
 
   function detallePregunta(q) {
@@ -110,70 +111,125 @@
     return esc(sinLetra(t));
   }
 
-  // ───────────── Reportes PDF ─────────────
-  async function pdf(examenId, codigos, boton) {
+  // ───────────── PDF del examen evaluado (archivos reales) ─────────────
+  /**
+   * codigos = [uno]   → descarga el PDF de ese alumno.
+   * codigos = null    → pide una carpeta y guarda un PDF por alumno (del grupo indicado o de todos).
+   * Importante: se llama directo desde el clic, para que el navegador permita abrir el selector de carpeta.
+   */
+  async function pdf(examenId, codigos, boton, grupo) {
     if (!examenId) return;
-    if (boton) cargando(boton, true);
+    const uno = codigos && codigos.length === 1;
+    let carpeta = null;
+    if (!uno) {
+      try { carpeta = await window.GenPDF.elegirCarpeta(); } catch (e) { return; } // canceló
+    }
+    if (boton) cargando(boton, true, uno ? '' : 'Generando…');
     try {
-      const d = await P().api('examenReportes', { examen_id: examenId, codigos: codigos || [] }, { espera: 60000 });
+      const d = await P().api('examenReportes', { examen_id: examenId, codigos: codigos || [], grupo: grupo || '' }, { espera: 90000 });
       if (!d.reportes.length) { avisar('No hay exámenes enviados para generar el PDF.', 'peligro'); return; }
-      const zona = $('zona-impresion');
-      zona.innerHTML = d.reportes.map((r) => htmlReporte(d, r)).join('');
-      renderMate(zona);
-      await esperarImagenes(zona);
-      const tituloAnterior = document.title;
-      const uno = d.reportes.length === 1;
-      document.title = limpiarNombre(uno
-        ? 'Resultados - ' + d.reportes[0].alumno.apellidos + ' ' + d.reportes[0].alumno.nombre + ' - ' + d.examen.titulo
-        : 'Resultados - ' + d.examen.titulo);
-      const restaurar = () => { document.title = tituloAnterior; window.removeEventListener('afterprint', restaurar); };
-      window.addEventListener('afterprint', restaurar);
-      if (!uno) avisar('Se abrirá un solo PDF con una página por alumno. Para enviarlo por separado usa el botón «PDF» de cada alumno.', '', 6000);
-      setTimeout(() => window.print(), uno ? 50 : 600);
+      if (uno) {
+        const r = d.reportes[0];
+        const bytes = await window.GenPDF.examenEvaluado(d, r);
+        window.GenPDF.descargar(bytes, 'Examen evaluado - ' + r.alumno.apellidos + ' ' + r.alumno.nombre + ' - ' + d.examen.titulo);
+        avisar('PDF listo: ' + r.alumno.nombre + ' ' + r.alumno.apellidos, 'ok');
+        return;
+      }
+      let i = 0;
+      for (const r of d.reportes) {
+        i++;
+        avisar('Generando PDF ' + i + ' de ' + d.reportes.length + '…', '', 60000);
+        const bytes = await window.GenPDF.examenEvaluado(d, r);
+        await window.GenPDF.guardarEn(carpeta, d.examen.titulo + (r.alumno.grupo ? ' - ' + r.alumno.grupo : ''),
+          r.alumno.apellidos + ' ' + r.alumno.nombre + ' (' + r.resultado.calificacion.toFixed(1) + ')', bytes);
+      }
+      avisar(carpeta ? 'Listo: ' + d.reportes.length + ' PDF guardados en «' + carpeta.name + '», una subcarpeta por grupo.' : 'Listo: se descargaron ' + d.reportes.length + ' PDF.', 'ok', 8000);
     } catch (err) {
-      avisar(err.message, 'peligro', 6000);
+      avisar(err.message, 'peligro', 7000);
     } finally { if (boton) cargando(boton, false); }
   }
 
-  const limpiarNombre = (t) => t.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150);
-
-  function esperarImagenes(el) {
-    return Promise.all(Array.from(el.querySelectorAll('img')).map((img) => img.complete ? null : new Promise((ok) => { img.onload = img.onerror = ok; setTimeout(ok, 4000); })));
+  // ───────────── Evidencias: calificación más alta, media y más baja por grupo ─────────────
+  function elegirEvidencias(lista) {
+    const ord = lista.slice().sort((a, b) => b.calificacion - a.calificacion || (a.apellidos + a.nombre).localeCompare(b.apellidos + b.nombre, 'es'));
+    if (!ord.length) return [];
+    const alta = ord[0], baja = ord[ord.length - 1];
+    const prom = ord.reduce((s, r) => s + r.calificacion, 0) / ord.length;
+    const candidatos = ord.length > 2 ? ord.slice(1, -1) : ord;
+    const media = candidatos.slice().sort((a, b) => Math.abs(a.calificacion - prom) - Math.abs(b.calificacion - prom))[0];
+    const sel = [{ tipo: 'alta', r: alta, titulo: 'Calificación más alta' }];
+    if (ord.length > 2) sel.push({ tipo: 'media', r: media, titulo: 'Calificación media' });
+    if (ord.length > 1) sel.push({ tipo: 'baja', r: baja, titulo: 'Calificación más baja' });
+    sel.promedio = prom;
+    return sel;
   }
 
-  function htmlReporte(d, r) {
-    const res = r.resultado;
-    const aprobado = res.calificacion >= 6;
-    let filas = '', grupo = null, n = 0;
-    r.items.forEach((it) => {
-      const clave = it.seccion + '¦' + it.grupo;
-      if (clave !== grupo) {
-        grupo = clave;
-        filas += '<tr class="rep-grupo"><td colspan="5">' + esc([it.seccion, it.grupo].filter(Boolean).join(' — ')) + '</td></tr>';
+  function abrirEvidencias(examenId) {
+    const A = P().A;
+    const conRes = A.datos.examenes.filter((x) => A.datos.resultados.some((r) => r.examen_id === x.examen_id));
+    if (!conRes.length) { avisar('Todavía no hay exámenes con resultados.', 'peligro'); return; }
+    const sel = $('ev-examen');
+    sel.innerHTML = conRes.map((x) => '<option value="' + esc(x.examen_id) + '">' + esc(x.titulo) + '</option>').join('');
+    sel.value = examenId && conRes.some((x) => x.examen_id === examenId) ? examenId : conRes[0].examen_id;
+    $('msg-ev').innerHTML = '';
+    $('ev-aviso-nav').hidden = !!window.showDirectoryPicker;
+    pintarEvidencias();
+    $('m-evid').hidden = false;
+  }
+
+  function gruposDe(examenId) {
+    const res = P().A.datos.resultados.filter((r) => r.examen_id === examenId);
+    const g = {};
+    res.forEach((r) => { (g[r.grupo || 'Sin grupo'] = g[r.grupo || 'Sin grupo'] || []).push(r); });
+    return g;
+  }
+
+  function pintarEvidencias() {
+    const g = gruposDe($('ev-examen').value);
+    const nombres = Object.keys(g).sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+    $('ev-grupos').innerHTML = nombres.map((n) => {
+      const ev = elegirEvidencias(g[n]);
+      return '<label class="ev-grupo"><input type="checkbox" data-ev-grupo="' + esc(n) + '" checked>' +
+        '<div><b>' + esc(n) + '</b> <span class="suave pequeno">· ' + g[n].length + ' alumno' + (g[n].length === 1 ? '' : 's') + ' · promedio ' + ev.promedio.toFixed(1) + '</span>' +
+        '<div class="ev-sel">' + ev.map((e) => '<span class="ev-' + e.tipo + '">' + e.titulo.replace('Calificación ', '') + ': <b>' + esc(e.r.nombre + ' ' + e.r.apellidos) + '</b> (' + e.r.calificacion.toFixed(1) + ')</span>').join('') + '</div>' +
+        (g[n].length < 3 ? '<div class="pequeno texto-aviso">Con menos de 3 alumnos no hay calificación media distinta.</div>' : '') + '</div></label>';
+    }).join('');
+  }
+  $('ev-examen').addEventListener('change', pintarEvidencias);
+
+  $('ev-ok').addEventListener('click', async () => {
+    const examenId = $('ev-examen').value;
+    const grupos = Array.from($('ev-grupos').querySelectorAll('[data-ev-grupo]:checked')).map((x) => x.dataset.evGrupo);
+    if (!grupos.length) { $('msg-ev').innerHTML = '<div class="mensaje error">Elige al menos un grupo.</div>'; return; }
+    let carpeta = null;
+    try { carpeta = await window.GenPDF.elegirCarpeta(); } catch (e) { return; } // canceló el selector
+    const btn = $('ev-ok');
+    cargando(btn, true, 'Generando…');
+    $('msg-ev').innerHTML = '';
+    try {
+      const g = gruposDe(examenId);
+      const plan = [];
+      grupos.forEach((n) => elegirEvidencias(g[n]).forEach((e) => plan.push({ grupo: n, e })));
+      const d = await P().api('examenReportes', { examen_id: examenId, codigos: Array.from(new Set(plan.map((x) => x.e.r.codigo))) }, { espera: 90000 });
+      const porCodigo = {};
+      d.reportes.forEach((r) => { porCodigo[r.codigo] = r; });
+      let i = 0;
+      const orden = { alta: '1', media: '2', baja: '3' };
+      for (const x of plan) {
+        i++;
+        $('msg-ev').innerHTML = '<div class="mensaje info">Generando ' + i + ' de ' + plan.length + '…</div>';
+        const r = porCodigo[x.e.r.codigo];
+        if (!r) continue;
+        const bytes = await window.GenPDF.examenEvaluado(d, r, 'Evidencia · ' + x.e.titulo + ' del grupo ' + x.grupo);
+        await window.GenPDF.guardarEn(carpeta, 'Evidencias - ' + d.examen.titulo + ' - ' + x.grupo,
+          orden[x.e.tipo] + ' ' + x.e.titulo + ' - ' + r.alumno.apellidos + ' ' + r.alumno.nombre + ' (' + r.resultado.calificacion.toFixed(1) + ')', bytes);
       }
-      n++;
-      const marca = { CORRECTA: ['✓', 'ok'], INCORRECTA: ['✗', 'mal'], PARCIAL: ['½', 'parcial'], POR_REVISAR: ['…', 'parcial'], SIN_RESPUESTA: ['–', 'mal'] }[it.resultado] || ['', ''];
-      const suya = it.respuesta_alumno ? (it.tipo === 'abierta' ? '<div class="pre">' + esc(it.respuesta_alumno) + '</div>' : respuestaBonita(it.tipo, it.respuesta_alumno)) : '<span class="suave">Sin respuesta</span>';
-      const correcta = it.tipo === 'abierta' ? '<span class="suave">Calificada por el profesor</span>' : respuestaBonita(it.tipo, it.respuesta_correcta);
-      filas += '<tr class="' + marca[1] + '"><td class="rep-n">' + n + '</td><td>' + (it.inciso ? '<b>' + esc(it.inciso) + '</b> ' : '') + esc(it.enunciado) +
-        (it.imagen_url ? '<div><img src="' + esc(it.imagen_url) + '" class="rep-img" alt=""></div>' : '') + '</td><td>' + suya + '</td><td>' +
-        (it.resultado === 'CORRECTA' ? '<span class="suave">—</span>' : correcta) + '</td>' +
-        '<td class="rep-pts"><span class="rep-marca ' + marca[1] + '">' + marca[0] + '</span> ' + fmt(it.puntos) + '/' + fmt(it.puntos_max) + '</td></tr>';
-    });
-    return '<section class="reporte">' +
-      '<header class="rep-cab"><img src="assets/img/logo.png" alt="Colegio La Paz"><div><div class="rep-esc">Colegio La Paz · Bachillerato</div>' +
-      '<h1>' + esc(d.examen.titulo) + '</h1><div class="rep-sub">' + esc([d.examen.materia, d.examen.nivel, d.profesor ? 'Profesor(a): ' + d.profesor : ''].filter(Boolean).join(' · ')) + '</div></div></header>' +
-      '<div class="rep-alumno"><div><div class="rep-et">Alumno</div><div class="rep-nombre">' + esc(r.alumno.nombre + ' ' + r.alumno.apellidos) + '</div>' +
-      '<div class="rep-sub">Presentado el ' + esc(fechaHora(r.enviado)) + ' · Código ' + esc(r.codigo) + '</div></div>' +
-      '<div class="rep-cal ' + (aprobado ? 'ok' : 'mal') + '"><div class="rep-et">Calificación</div><div class="rep-num">' + res.calificacion.toFixed(1) + '</div>' +
-      '<div class="rep-sub">' + fmt(res.puntos) + ' de ' + fmt(res.puntos_max) + ' puntos · ' + res.porcentaje + '%</div></div></div>' +
-      (res.comentario ? '<div class="rep-coment"><div class="rep-et">Comentario del profesor</div>' + esc(res.comentario) + '</div>' : '') +
-      (res.estado === 'POR_REVISAR' ? '<div class="rep-aviso">Hay preguntas abiertas pendientes de calificar; la calificación puede cambiar.</div>' : '') +
-      '<table class="rep-tabla"><thead><tr><th>#</th><th>Pregunta</th><th>Tu respuesta</th><th>Respuesta correcta</th><th>Puntos</th></tr></thead><tbody>' + filas + '</tbody></table>' +
-      '<footer class="rep-pie">Reporte generado el ' + esc(new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })) + ' · Exámenes en línea · Colegio La Paz</footer>' +
-      '</section>';
-  }
-  const fmt = (n) => (Math.round(Number(n) * 10) / 10).toString();
+      $('msg-ev').innerHTML = '<div class="mensaje info">✓ Listo: ' + plan.length + ' PDF ' + (carpeta ? 'guardados en «' + esc(carpeta.name) + '», en una subcarpeta «Evidencias…» por grupo.' : 'descargados.') + '</div>';
+      avisar('Evidencias guardadas ✓', 'ok');
+    } catch (err) {
+      $('msg-ev').innerHTML = '<div class="mensaje error">' + esc(err.message) + '</div>';
+    } finally { cargando(btn, false); }
+  });
 
-  window.Analisis = { abrir, pdf };
+  window.Analisis = { abrir, pdf, evidencias: abrirEvidencias, elegirEvidencias };
 })();

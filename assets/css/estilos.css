@@ -112,7 +112,8 @@ body.en-examen input, body.en-examen textarea { user-select: text; -webkit-user-
 .barra .logo { height: 30px; }
 .barra .titulo { min-width: 0; }
 .barra .titulo b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.barra .titulo span { font-size: .82rem; opacity: .75; }
+.barra .titulo span { display: block; font-size: .82rem; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barra .titulo .ex-datos { opacity: .9; }
 .reloj { font-family: var(--mono); font-size: 1.35rem; font-weight: 700; padding: .2em .7em; border-radius: 8px; background: rgba(255, 255, 255, .1); min-width: 112px; text-align: center; }
 .reloj.poco { background: var(--aviso); }
 .reloj.critico { background: var(--peligro); animation: latido 1s infinite; }
@@ -398,6 +399,51 @@ table.matriz { border-collapse: collapse; font-size: .82rem; }
 .matriz .c { font-weight: 700; width: 26px; }
 .matriz .c.ok { color: var(--ok); background: #f1f9f4; } .matriz .c.mal { color: var(--peligro); background: #fdf3f2; }
 .matriz .c.parcial { color: var(--aviso); background: #fdf6ec; } .matriz .c.revisar { color: var(--aviso); } .matriz .c.vacia { color: #b5bdc9; }
+
+/* ───── Carpetas, tipos, semestral y evidencias ───── */
+.ex-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 860px) { .ex-layout { grid-template-columns: 1fr; } }
+.carpetas-nav { background: #fff; border: 1px solid var(--linea); border-radius: var(--radio); padding: 12px; position: sticky; top: 12px; }
+.carp-tit { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--marino); margin: 2px 6px 8px; }
+.carp { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; cursor: pointer; font-size: .92rem; position: relative; }
+.carp:hover { background: var(--banda); }
+.carp.activa { background: var(--marino); color: #fff; }
+.carp-nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.carp-n { font-size: .78rem; opacity: .7; }
+.carp-acc { display: none; gap: 3px; }
+.carp.activa .carp-acc, .carp:hover .carp-acc { display: inline-flex; }
+.carp-acc .ico-btn { width: 24px; height: 24px; font-size: .75rem; }
+.carp:hover .carp-n, .carp.activa .carp-n { display: none; }
+.chips-tipo { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.chips-tipo:empty { display: none; }
+.chips-tipo button { border: 1px solid var(--campo); background: #fff; border-radius: 999px; padding: 5px 14px; font-size: .85rem; cursor: pointer; color: var(--tinta-2); }
+.chips-tipo button.activo { background: var(--marino); border-color: var(--marino); color: #fff; }
+.tipo-ex { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; margin-bottom: 4px; background: var(--banda); color: var(--marino); }
+.tipo-ex.t-ADMISION { background: #fde8eb; color: var(--rojo); }
+.tipo-ex.t-SEMESTRAL { background: #fbf1e4; color: #8a4b00; }
+.tipo-ex.t-PERIODO_1, .tipo-ex.t-PERIODO_2, .tipo-ex.t-PERIODO_3 { background: var(--acento-suave); color: var(--marino-2); }
+.fila-ed-titulo { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0 14px; }
+@media (max-width: 760px) { .fila-ed-titulo { grid-template-columns: 1fr; } }
+.ev-grupos { display: grid; gap: 8px; max-height: 46vh; overflow: auto; margin-bottom: 8px; }
+.ev-grupo { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; border: 1px solid var(--linea); border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+.ev-grupo input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--marino); }
+.ev-sel { display: grid; gap: 2px; margin-top: 6px; font-size: .86rem; }
+.ev-sel span { padding-left: 10px; border-left: 3px solid var(--linea); }
+.ev-sel .ev-alta { border-color: var(--ok); } .ev-sel .ev-media { border-color: var(--aviso); } .ev-sel .ev-baja { border-color: var(--peligro); }
+.sem-lista { display: grid; gap: 6px; max-height: 38vh; overflow: auto; }
+.sem-item { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; border: 1px solid var(--linea); border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+.sem-item input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--marino); }
+
+/* Datos del examen (editor y página del alumno) */
+.ed-sub-tit { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--tinta-3); margin: 6px 0 10px; padding-top: 10px; border-top: 1px solid var(--linea); }
+.fila-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 14px; }
+@media (max-width: 900px) { .fila-4 { grid-template-columns: 1fr 1fr; } }
+.ficha-examen { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; margin: 0 0 16px; border: 1px solid var(--linea); border-radius: 8px; overflow: hidden; }
+.ficha-examen div { padding: 8px 12px; border-bottom: 1px solid var(--linea); background: #fafbfc; }
+.ficha-examen div:nth-child(odd) { border-right: 1px solid var(--linea); }
+.ficha-examen dt { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--tinta-3); }
+.ficha-examen dd { margin: 0; font-weight: 600; color: var(--marino); }
+@media (max-width: 560px) { .ficha-examen { grid-template-columns: 1fr; } .ficha-examen div:nth-child(odd) { border-right: 0; } }
 
 /* ───── Impresión: fichas de códigos y reportes de resultados ───── */
 .reporte { font-family: "Segoe UI", system-ui, Arial, sans-serif; color: #1f2a3c; font-size: 10.5pt; }

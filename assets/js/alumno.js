@@ -45,7 +45,8 @@
       const r = await llamar('validarCodigo', { codigo, token });
       E.codigo = codigo; E.token = token; E.info = r.examen; E.situacion = r.situacion;
       if (r.situacion === 'NUEVO') {
-        $('datos-examen-titulo').textContent = r.examen.titulo + ' · ' + r.examen.nivel;
+        $('datos-examen-titulo').textContent = [r.examen.titulo, r.examen.nivel, r.examen.grupo ? 'Grupo ' + r.examen.grupo : ''].filter(Boolean).join(' · ');
+        $('datos-admision').hidden = !r.examen.esAdmision;
         mostrar('p-datos');
         setTimeout(() => $('in-nombre').focus(), 50);
       } else {
@@ -69,9 +70,11 @@
     const faltan = [];
     if (d.nombre.length < 2) faltan.push('nombre');
     if (d.apellidos.length < 2) faltan.push('apellidos');
-    if (d.escuela.length < 2) faltan.push('escuela');
-    const prom = Number(d.promedio.replace(',', '.'));
-    if (!d.promedio || !isFinite(prom) || prom < 5 || prom > 10) faltan.push('promedio');
+    if (E.info.esAdmision) {
+      if (d.escuela.length < 2) faltan.push('escuela');
+      const prom = Number(d.promedio.replace(',', '.'));
+      if (!d.promedio || !isFinite(prom) || prom < 5 || prom > 10) faltan.push('promedio');
+    } else { delete d.escuela; delete d.promedio; }
     if (faltan.length) {
       faltan.forEach((k) => campos[k].classList.add('error'));
       campos[faltan[0]].focus();
@@ -91,8 +94,9 @@
     $('reglas-titulo').textContent = reanudar ? 'Continuar examen' : 'Antes de empezar';
     $('reglas-sub').textContent = (alumno && alumno.nombre ? alumno.nombre + ', ' : '') +
       (reanudar ? 'tu examen sigue en curso y tus respuestas están guardadas. El reloj no se detuvo.' : 'lee con atención las reglas del examen.');
+    $('reglas-ficha').innerHTML = fichaExamen(ex);
     $('reglas-pastillas').innerHTML = [
-      '📘 ' + esc(ex.titulo), '⏱ ' + ex.duracionMin + ' minutos', '📝 ' + ex.totalPreguntas + ' preguntas', '⚠ ' + ex.maxAdvertencias + ' advertencias máximo'
+      '📘 ' + esc(ex.titulo), '📝 ' + ex.totalPreguntas + ' preguntas', '⚠ ' + ex.maxAdvertencias + ' advertencias máximo'
     ].map((t) => '<span class="pastilla">' + t + '</span>').join('');
     const reglas = [
       ['⛶', 'El examen se presenta en <b>pantalla completa</b>. No salgas de ella.', false],
@@ -109,6 +113,23 @@
     $('btn-comenzar').textContent = reanudar ? 'Continuar en pantalla completa' : 'Comenzar en pantalla completa';
     mensaje('msg-reglas', '');
   }
+  function fechaLarga(iso) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return iso || '';
+    const [a, m, d] = iso.split('-').map(Number);
+    return new Date(a, m - 1, d).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  /** Ficha con los datos del examen que capturó el docente. */
+  function fichaExamen(ex) {
+    const d = ex.datos || {};
+    const filas = [
+      ['Materia', d.materia], ['Docente', d.docente], ['Periodo', d.periodo], ['Semestre', d.semestre],
+      ['Fecha de aplicación', fechaLarga(d.fecha_aplicacion)], ['Grupo', ex.grupo],
+      ['Valor del examen', d.valor_porcentaje !== '' && d.valor_porcentaje != null ? d.valor_porcentaje + '% de la calificación' : ''],
+      ['Duración', d.duracion_min ? d.duracion_min + ' minutos' : '']
+    ].filter((f) => f[1]);
+    return filas.length ? '<dl class="ficha-examen">' + filas.map((f) => '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + '</dd></div>').join('') + '</dl>' : '';
+  }
+
   $('chk-reglas').addEventListener('change', (e) => { $('btn-comenzar').disabled = !e.target.checked; });
 
   $('btn-comenzar').addEventListener('click', async () => {
@@ -138,6 +159,10 @@
     E.items = [];
     E.grupos.forEach((g, gi) => g.items.forEach((it) => { it.n = E.items.length + 1; it.g = gi; E.items.push(it); }));
     $('ex-titulo').textContent = E.examen.titulo;
+    const dx = E.examen.datos || {};
+    const totalPts = E.items.reduce((s, it) => s + Number(it.puntos || 0), 0);
+    $('ex-datos').textContent = [dx.materia, dx.periodo, dx.semestre ? 'Semestre ' + dx.semestre : '', dx.docente,
+      dx.valor_porcentaje !== '' && dx.valor_porcentaje != null ? 'Vale ' + dx.valor_porcentaje + '%' : '', totalPts + ' puntos'].filter(Boolean).join(' · ');
     $('ex-alumno').textContent = r.alumno.nombre + ' ' + r.alumno.apellidos + ' · Código ' + E.codigo;
     marcaDeAgua(r.alumno.nombre + ' ' + r.alumno.apellidos + ' · ' + E.codigo);
     construirNavegador();

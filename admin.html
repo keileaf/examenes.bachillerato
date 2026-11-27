@@ -61,11 +61,18 @@
         <div class="cabecera">
           <h2 id="tit-examenes">Mis exámenes</h2>
           <div class="herr">
+            <button class="btn secundario" id="btn-semestral">📚 Crear semestral</button>
             <button class="btn secundario" id="btn-importar">✨ Importar con IA (PDF o fotos)</button>
             <button class="btn" id="btn-nuevo-examen">+ Nuevo examen</button>
           </div>
         </div>
-        <div class="tarjetas-examen" id="lista-examenes"></div>
+        <div class="ex-layout">
+          <aside class="carpetas-nav" id="carpetas-nav"></aside>
+          <div>
+            <div class="chips-tipo" id="filtro-tipos"></div>
+            <div class="tarjetas-examen" id="lista-examenes"></div>
+          </div>
+        </div>
       </div>
 
       <!-- En vivo -->
@@ -89,13 +96,15 @@
           <h2>Resultados</h2>
           <div class="herr">
             <select class="entrada" id="sel-res-examen" style="width:auto"></select>
+            <select class="entrada" id="sel-res-grupo" style="width:auto"></select>
             <button class="btn secundario" id="btn-analisis" disabled>📊 Análisis</button>
-            <button class="btn secundario" id="btn-pdfs" disabled>📄 PDF de todos</button>
+            <button class="btn secundario" id="btn-pdfs" disabled>📄 PDF de cada alumno</button>
+            <button class="btn secundario" id="btn-evidencias">📁 Evidencias</button>
             <button class="btn secundario" id="btn-csv">Descargar CSV</button>
           </div>
         </div>
         <div class="panel"><div class="tabla-env"><table class="tabla" id="tabla-resultados"></table></div></div>
-        <p class="pequeno suave" style="margin-top:10px">Elige un examen para ver su análisis y sacar los PDF. Con «PDF» en cada alumno guardas su reporte para enviárselo.</p>
+        <p class="pequeno suave" style="margin-top:10px">Elige un examen (y si quieres, un grupo) para ver su análisis. «PDF» descarga el examen evaluado de ese alumno; «PDF de cada alumno» te pide una carpeta y guarda uno por alumno.</p>
       </div>
 
       <!-- Incidencias -->
@@ -129,6 +138,8 @@
         <button class="btn secundario chico" id="ed-volver">← Mis exámenes</button>
         <div class="ed-titulo"><b id="ed-titulo">Nuevo examen</b><span id="ed-resumen" class="pequeno suave"></span></div>
         <span class="pequeno" id="ed-estado"></span>
+        <button class="btn secundario" id="ed-deshacer" hidden>↶ Deshacer variación</button>
+        <button class="btn secundario" id="ed-variar" title="La IA cambia valores y datos de todas las preguntas y recalcula las respuestas">✨ Variar con IA</button>
         <button class="btn secundario" id="ed-prev">Vista previa</button>
         <button class="btn" id="ed-guardar">Guardar</button>
       </div>
@@ -144,7 +155,7 @@
       <div class="campo"><label for="gen-examen">Examen</label><select class="entrada" id="gen-examen"></select></div>
       <div class="fila-2">
         <div class="campo"><label for="gen-cantidad">Cantidad</label><input class="entrada" id="gen-cantidad" type="number" min="1" max="200" value="3"></div>
-        <div class="campo"><label for="gen-etiqueta">Etiqueta (opcional)</label><input class="entrada" id="gen-etiqueta" maxlength="80" placeholder="Ej. 3° B · 28 nov"></div>
+        <div class="campo"><label for="gen-etiqueta">Grupo <span class="req">*</span></label><input class="entrada" id="gen-etiqueta" maxlength="60" list="lista-grupos" placeholder="Ej. 3°B (en admisión: «Admisión 28 nov»)"><datalist id="lista-grupos"></datalist></div>
       </div>
       <div id="msg-generar"></div>
       <div class="acciones">
@@ -242,6 +253,67 @@
     </form>
   </div>
 
+  <!-- Modal: evidencias -->
+  <div class="modal-fondo" id="m-evid" hidden>
+    <div class="modal ancho">
+      <h2>Generar evidencias</h2>
+      <p class="suave pequeno">Por cada grupo se guardan 3 PDF del examen evaluado: la calificación <b>más alta</b>, la <b>media</b> (la más cercana al promedio del grupo) y la <b>más baja</b>. Te preguntará en qué carpeta de tu computadora guardarlos.</p>
+      <div class="campo"><label for="ev-examen">Examen</label><select class="entrada" id="ev-examen"></select></div>
+      <div class="ev-grupos" id="ev-grupos"></div>
+      <div class="mensaje aviso pequeno" id="ev-aviso-nav" hidden>Tu navegador no permite elegir carpeta; los PDF se descargarán. Para elegir carpeta usa Chrome o Edge en computadora.</div>
+      <div id="msg-ev"></div>
+      <div class="acciones">
+        <button class="btn secundario" data-cerrar>Cerrar</button>
+        <button class="btn" id="ev-ok">📁 Elegir carpeta y guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: carpeta -->
+  <div class="modal-fondo" id="m-carpeta" hidden>
+    <form class="modal" id="form-carpeta">
+      <h2 id="carp-titulo">Nueva carpeta</h2>
+      <div class="campo"><label for="carp-nombre">Nombre</label><input class="entrada" id="carp-nombre" maxlength="80" placeholder="Ej. Álgebra · 1er semestre 2026"></div>
+      <div id="msg-carp"></div>
+      <div class="acciones">
+        <button type="button" class="btn secundario" data-cerrar>Cancelar</button>
+        <button type="submit" class="btn" id="btn-carp-ok">Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Modal: mover a carpeta -->
+  <div class="modal-fondo" id="m-mover" hidden>
+    <form class="modal" id="form-mover">
+      <h2>Mover a carpeta</h2>
+      <p class="suave" id="mov-examen"></p>
+      <div class="campo"><label for="mov-carpeta">Carpeta</label><select class="entrada" id="mov-carpeta"></select></div>
+      <div class="acciones">
+        <button type="button" class="btn secundario" data-cerrar>Cancelar</button>
+        <button type="submit" class="btn" id="btn-mov-ok">Mover</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Modal: crear semestral -->
+  <div class="modal-fondo" id="m-semestral" hidden>
+    <div class="modal ancho">
+      <h2>Crear examen semestral</h2>
+      <p class="suave pequeno">Elige los exámenes de periodo que quieres juntar. Se copian sus preguntas a un examen nuevo, que luego puedes ajustar en el editor (quitar, cambiar o agregar preguntas).</p>
+      <div class="sem-lista" id="sem-lista"></div>
+      <div class="campo" style="margin-top:12px"><label for="sem-titulo">Título del semestral</label><input class="entrada" id="sem-titulo" maxlength="150"></div>
+      <label class="casilla compacta"><input type="checkbox" id="sem-orden" checked> Revolver el orden de las preguntas dentro de cada bloque</label>
+      <label class="casilla compacta"><input type="checkbox" id="sem-opciones" checked> Cambiar el orden de las opciones (la respuesta correcta cambia de letra)</label>
+      <label class="casilla compacta" id="sem-ia-caja"><input type="checkbox" id="sem-ia"> ✨ Variar valores con IA (cambia números y datos, y recalcula las respuestas)</label>
+      <div class="ia-progreso" id="sem-progreso" hidden><div class="barra-prog"><i id="sem-barra"></i></div><div class="pequeno" id="sem-texto"></div></div>
+      <div id="msg-sem"></div>
+      <div class="acciones">
+        <button class="btn secundario" data-cerrar>Cancelar</button>
+        <button class="btn" id="sem-ok">Crear semestral</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: confirmar -->
   <div class="modal-fondo" id="m-confirmar" hidden>
     <div class="modal">
@@ -274,6 +346,7 @@
   <script src="assets/js/comun.js"></script>
   <script src="assets/js/admin.js"></script>
   <script src="assets/js/editor.js"></script>
+  <script src="assets/js/generar-pdf.js"></script>
   <script src="assets/js/analisis.js"></script>
 </body>
 </html>
