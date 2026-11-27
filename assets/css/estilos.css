@@ -236,6 +236,7 @@ table.tabla { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .menu-acc .lista button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 8px 12px; border-radius: 7px; cursor: pointer; font-size: .9rem; }
 .menu-acc .lista button:hover { background: #f2f4f8; }
 .menu-acc .lista button.rojo { color: var(--peligro); }
+.menu-acc .lista.arriba { top: auto; bottom: calc(100% + 4px); }
 .calif { font-family: var(--serif); font-size: 1.5rem; font-weight: 400; color: var(--marino); }
 .cajon-fondo { position: fixed; inset: 0; z-index: 80; background: rgba(15, 20, 35, .45); }
 .cajon { position: fixed; top: 0; right: 0; bottom: 0; z-index: 81; width: min(860px, 100vw); background: var(--fondo); box-shadow: -10px 0 40px rgba(0, 0, 0, .2); display: flex; flex-direction: column; }

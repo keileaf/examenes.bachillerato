@@ -674,7 +674,17 @@
   document.addEventListener('click', (e) => {
     const m = e.target.closest('[data-menu-ex]');
     document.querySelectorAll('#lista-examenes .lista').forEach((l) => { if (!m || l !== m.nextElementSibling) l.hidden = true; });
-    if (m) { m.nextElementSibling.hidden = !m.nextElementSibling.hidden; return; }
+    if (m) {
+      const l = m.nextElementSibling;
+      l.hidden = !l.hidden;
+      if (!l.hidden) {
+        // Si no cabe hacia abajo, el menú se abre hacia arriba
+        l.classList.remove('arriba');
+        const r = l.getBoundingClientRect();
+        if (r.bottom > window.innerHeight - 8 && m.getBoundingClientRect().top > r.height + 8) l.classList.add('arriba');
+      }
+      return;
+    }
     const b = e.target.closest('[data-acc-ex]');
     if (!b) return;
     const id = b.dataset.id;
